@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: mama-notifier-app
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mama_notifier.db:/app/mama_notifier.db
+      - ./mama_notifier.log:/app/mama_notifier.log
+    env_file:
+      - .env
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+    restart: always

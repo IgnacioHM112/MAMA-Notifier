@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# Configuración y Secretos (CRÍTICO)
+.env
+.env.local
+.env.*
+!.env.example
+
+# Base de Datos
+*.db
+*.sqlite3
+
+# Logs
+*.log
+*.log.*
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ejecutables y Binarios
+*.exe
+*.bin
+
+# Archivos Temporales o Notas
+Ante cualquier cosa
