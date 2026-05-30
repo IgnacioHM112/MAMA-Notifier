@@ -77,15 +77,3 @@ Ejemplo corto (cliente):
 
 1) `POST /api/v1/login` → recibir `access_token`.
 2) `POST /api/v1/events` con `Authorization: Bearer <token>` y body JSON del evento.
-
-IMPORTANTE: El secreto usado para firmar/validar JWT se lee desde la variable de entorno `JWT_SECRET_KEY`. Asegurate de tener en `.env` una única línea sin espacios ni comillas:
-
-```env
-JWT_SECRET_KEY=tu_clave_super_segura_de_64_caracteres_hex
-```
-
-He corregido dos cosas en el servidor para que esto funcione correctamente:
-- `main.py` ahora carga las variables de entorno antes de leer `JWT_SECRET_KEY`.
-- Se arregló un espacio accidental en `JWT_SECRET_KEY` dentro de tu archivo `.env`.
-
-Si querés, puedo añadir el snippet de cliente Flutter directamente al fichero `flutter/api_service.dart`.
