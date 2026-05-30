@@ -2,3 +2,9 @@ flask
 twilio
 python-dotenv
 pytz
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+jinja2
+python-multipart

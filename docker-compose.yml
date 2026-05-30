@@ -7,6 +7,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
+      - ./main.py:/app/main.py
       - ./mama_notifier.db:/app/mama_notifier.db
       - ./mama_notifier.log:/app/mama_notifier.log
     env_file:

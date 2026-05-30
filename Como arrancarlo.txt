@@ -1,0 +1,24 @@
+Terminal 1: El Servidor (Python)
+  Esta es la que procesa la lógica y envía el WhatsApp.
+   1. Abre una terminal en la carpeta del proyecto.
+   2. Ejecuta:
+   1    python app.py
+     Déjala abierta. Verás que dice Running on http://127.0.0.1:5000.
+
+  Terminal 2: El Túnel (ngrok)
+  Esta te dará una dirección de internet para tu macro.
+   1. Abre otra terminal en la misma carpeta.
+   2. Ejecuta:
+   1    .\ngrok.exe http 5000
+   3. Busca una línea que dice Forwarding. Verás algo como:
+     Forwarding  https://a1b2-c3d4.ngrok-free.app -> http://localhost:5000
+
+  ---
+
+  Paso Final: Actualizar tu Macro
+  Ahora que tienes ngrok andando, la URL de tu macro cambió. 
+
+  En tu celular (MacroDroid o similar), debes poner la dirección que te dio ngrok:
+   * Antes: http://192.168...
+   * Ahora: https://XXXX-XXXX.ngrok-free.app/webhook/llegada 
+      (Reemplaza las XXXX por la dirección real que te dio ngrok en la terminal 2).

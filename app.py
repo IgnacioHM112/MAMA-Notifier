@@ -136,9 +136,14 @@ def webhook(accion):
     ahora = obtener_ahora_local()
     timestamp_msg = ahora.strftime("%H:%M")
     
-    emojis = "✅" if accion == 'llegada' else "🏠"
-    lugar = "al trabajo/facu" if accion == 'llegada' else "de allá. Voy para casa"
-    texto_mensaje = f"¡Hola! Ya {'llegué' if accion == 'llegada' else 'salí'} {lugar}. ({timestamp_msg}) {emojis}"
+    if accion == 'llegada':
+        # Mensaje por defecto si no hay variable de entorno
+        default_llegada = f"¡Hola Brenda! 👋 Ignacio ya llegó a su trabajo. 💼 ({timestamp_msg}) ✅"
+        texto_mensaje = os.getenv('MSG_LLEGADA', default_llegada).replace('{time}', timestamp_msg)
+    else:
+        # Mensaje por defecto si no hay variable de entorno
+        default_salida = f"¡Hola Brenda! ✨ Ignacio está volviendo a casa. 🏠 ({timestamp_msg}) 🏍️💨"
+        texto_mensaje = os.getenv('MSG_SALIDA', default_salida).replace('{time}', timestamp_msg)
 
     logger.info(f"Procesando {accion}...")
     exito, sid = enviar_whatsapp(texto_mensaje)
