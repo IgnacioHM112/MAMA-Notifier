@@ -19,5 +19,5 @@ COPY . .
 # Exponer el puerto que usa Flask
 EXPOSE 5000
 
-# Comando para ejecutar la aplicación
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"]
+# Comando para ejecutar la aplicación con auto-reload para desarrollo
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]

@@ -11,9 +11,29 @@ from pydantic import BaseModel, Field
 from twilio.rest import Client
 from dotenv import load_dotenv
 import pytz
+import bcrypt
+from jose import JWTError, jwt
+
+# --- CONFIGURACIÓN JWT ---
+load_dotenv()
+
+# --- CONFIGURACIÓN JWT ---
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super_secreto_para_desarrollo_cambiame")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 semana para el móvil
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def decode_access_token(token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        return None
 
 # --- CONFIGURACIÓN ---
-load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("MAMA-NOTIFIER-SAAS")
 
@@ -23,10 +43,26 @@ DB_NAME = 'mama_notifier.db'
 # Credenciales maestras de Twilio
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID', '').strip()
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN', '').strip()
+# IMPORTANTE: TWILIO_WHATSAPP_NUMBER debe ser el número de Twilio (ej: whatsapp:+14155238886)
 TWILIO_WHATSAPP_NUMBER = os.getenv('TWILIO_WHATSAPP_NUMBER', '').strip()
 
-app = FastAPI(title="Mama-Notifier SaaS", version="3.0.0")
+app = FastAPI(title="Mama-Notifier SaaS", version="3.1.0")
 templates = Jinja2Templates(directory="templates")
+
+# Seguridad - Hash de contraseñas
+def get_password_hash(password):
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
+
+def verify_password(plain_password, hashed_password):
+    try:
+        password_byte_enc = plain_password.encode('utf-8')
+        hashed_password_byte_enc = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_byte_enc, hashed_password_byte_enc)
+    except Exception as e:
+        logger.error(f"Error verificando password: {e}")
+        return False
 
 # --- MODELOS ---
 
@@ -55,6 +91,7 @@ def init_db():
             id TEXT PRIMARY KEY,
             full_name TEXT,
             email TEXT UNIQUE,
+            password_hash TEXT,
             api_token TEXT UNIQUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -82,9 +119,9 @@ def init_db():
         )
     ''')
     
-    # --- MIGRACIONES MANUALES (Para DBs existentes) ---
+    # --- MIGRACIONES MANUALES ---
     try:
-        cursor.execute("ALTER TABLE users ADD COLUMN email TEXT UNIQUE")
+        cursor.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
     except: pass
     try:
         cursor.execute("ALTER TABLE contacts ADD COLUMN msg_llegada TEXT")
@@ -99,36 +136,74 @@ init_db()
 # --- SEGURIDAD ---
 
 async def get_current_user(request: Request):
-    # Intentar obtener token de la cabecera (App Móvil) o de la Cookie (Dashboard)
     auth = request.headers.get("Authorization")
     token = None
-    
+
     if auth and auth.startswith("Bearer "):
         token = auth.split(" ")[1]
+        # Intentar decodificar como JWT (App Móvil)
+        payload = decode_access_token(token)
+        if payload:
+            conn = get_db()
+            user = conn.execute("SELECT * FROM users WHERE id = ?", (payload.get("sub"),)).fetchone()
+            conn.close()
+            return user
     else:
+        # Intentar obtener de la Cookie (Dashboard)
         token = request.cookies.get("session_token")
-    
+
     if not token:
         return None
 
     conn = get_db()
+    # Compatibilidad con token estático (api_token) para el dashboard
     user = conn.execute("SELECT * FROM users WHERE api_token = ?", (token,)).fetchone()
     conn.close()
     return user
 
-# --- MOTOR DE TWILIO ---
+# --- RUTAS DASHBOARD & AUTH ---
+
+class LoginAppRequest(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/v1/login")
+async def login_app(payload: LoginAppRequest):
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE email = ?", (payload.email.lower(),)).fetchone()
+    conn.close()
+
+    if user and verify_password(payload.password, user["password_hash"]):
+        access_token = create_access_token(data={"sub": user["id"]})
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user["id"],
+                "full_name": user["full_name"],
+                "email": user["email"]
+            }
+        }
+
+    raise HTTPException(status_code=401, detail="Credenciales inválidas")
+
 
 def send_whatsapp(to_phone: str, body: str):
-    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_WHATSAPP_NUMBER:
         logger.warning(f"Simulando WhatsApp a {to_phone}: {body}")
         return "SIM_SID_" + str(uuid.uuid4())[:8]
     
-    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-    target = to_phone if to_phone.startswith('whatsapp:') else f"whatsapp:{to_phone}"
-    message = client.messages.create(from_=TWILIO_WHATSAPP_NUMBER, body=body, to=target)
-    return message.sid
+    try:
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        # Asegurar prefijo whatsapp:
+        target = to_phone if to_phone.startswith('whatsapp:') else f"whatsapp:{to_phone}"
+        message = client.messages.create(from_=TWILIO_WHATSAPP_NUMBER, body=body, to=target)
+        return message.sid
+    except Exception as e:
+        logger.error(f"Error enviando Twilio: {e}")
+        return f"ERROR_{str(uuid.uuid4())[:4]}"
 
-# --- RUTAS DASHBOARD & REGISTRO ---
+# --- RUTAS DASHBOARD ---
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, user=Depends(get_current_user)):
@@ -151,14 +226,15 @@ async def home(request: Request, user=Depends(get_current_user)):
     )
 
 @app.post("/register")
-async def register(name: str = Form(...), email: str = Form(...)):
+async def register(name: str = Form(...), email: str = Form(...), password: str = Form(...)):
     user_id = str(uuid.uuid4())[:8]
     api_token = "mama_" + str(uuid.uuid4()).replace("-", "")[:16]
+    pw_hash = get_password_hash(password)
     
     try:
         conn = get_db()
-        conn.execute("INSERT INTO users (id, full_name, email, api_token) VALUES (?, ?, ?, ?)",
-                     (user_id, name, email, api_token))
+        conn.execute("INSERT INTO users (id, full_name, email, password_hash, api_token) VALUES (?, ?, ?, ?, ?)",
+                     (user_id, name, email.lower(), pw_hash, api_token))
         conn.commit()
         conn.close()
         response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
@@ -166,6 +242,27 @@ async def register(name: str = Form(...), email: str = Form(...)):
         return response
     except Exception as e:
         return f"Error: El email ya existe o hubo un fallo en la DB. {e}"
+
+@app.post("/login")
+async def login(email: str = Form(...), password: str = Form(...)):
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE email = ?", (email.lower(),)).fetchone()
+    conn.close()
+    
+    if user and verify_password(password, user["password_hash"]):
+        response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(key="session_token", value=user["api_token"])
+        return response
+    
+    return "Error: Credenciales inválidas."
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/")
+    response.delete_cookie("session_token")
+    return response
+
+# --- GESTIÓN DE CONTACTOS ---
 
 @app.post("/contacts/add")
 async def add_contact(
@@ -181,7 +278,7 @@ async def add_contact(
     u_name = user["full_name"]
     conn = get_db()
     
-    # 1. Guardar contacto con sus mensajes personalizados
+    # 1. Guardar contacto
     conn.execute('''
         INSERT INTO contacts (user_id, contact_name, phone_number, msg_llegada, msg_salida)
         VALUES (?, ?, ?, ?, ?)
@@ -189,19 +286,54 @@ async def add_contact(
     conn.commit()
     conn.close()
 
-    # 2. Enviar mensaje de VINCULACIÓN (Onboarding del contacto)
+    # 2. Enviar mensaje de VINCULACIÓN
     link_msg = f"🔔 ¡Hola {name}! {u_name} te ha agregado a su red de seguridad en Mama-Notifier. Recibirás un aviso por aquí cuando llegue o salga de sus zonas seguras. ✨"
     send_whatsapp(phone, link_msg)
     
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
-@app.get("/logout")
-async def logout():
-    response = RedirectResponse(url="/")
-    response.delete_cookie("session_token")
-    return response
+@app.get("/contacts/delete/{contact_id}")
+async def delete_contact(contact_id: int, user=Depends(get_current_user)):
+    if not user: raise HTTPException(status_code=401)
+    
+    conn = get_db()
+    conn.execute("DELETE FROM contacts WHERE id = ? AND user_id = ?", (contact_id, user["id"]))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
-# --- RUTAS DE SIMULACIÓN Y API (Actualizadas con mensajes personalizados) ---
+# --- API PARA MÓVIL (ENDPOINT REAL) ---
+
+@app.post("/api/v1/events")
+async def handle_event(payload: EventPayload, user=Depends(get_current_user)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Token de API inválido")
+
+    conn = get_db()
+    contacts = conn.execute("SELECT * FROM contacts WHERE user_id = ?", (user["id"],)).fetchall()
+    
+    ahora = datetime.now(ARG_TZ)
+    time_str = ahora.strftime("%H:%M")
+    
+    results = []
+    for c in contacts:
+        template = c["msg_llegada"] if payload.event_type == "llegada" else c["msg_salida"]
+        mensaje = template.replace("{user}", user["full_name"]).replace("{time}", time_str)
+        
+        sid = send_whatsapp(c["phone_number"], mensaje)
+        
+        conn.execute('''
+            INSERT INTO notification_logs (user_id, event_type, recipient, status, twilio_sid, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (user["id"], payload.event_type, c["contact_name"], "sent", sid, ahora.isoformat()))
+        results.append({"contact": c["contact_name"], "sid": sid})
+    
+    conn.commit()
+    conn.close()
+    
+    return {"status": "accepted", "notifications_sent": len(results), "details": results}
+
+# --- SIMULACIÓN (DASHBOARD) ---
 
 @app.get("/simulate/{event_type}")
 async def simulate_event(event_type: str, user=Depends(get_current_user)):
