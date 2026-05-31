@@ -38,7 +38,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("MAMA-NOTIFIER-SAAS")
 
 ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
-DB_NAME = 'mama_notifier.db'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.path.join(BASE_DIR, 'mama_notifier.db')
 
 # Credenciales maestras de Twilio
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID', '').strip()
@@ -75,6 +76,17 @@ class EventPayload(BaseModel):
     device_id: str
     event_type: str
     location_data: LocationData
+
+class UserRegister(BaseModel):
+    full_name: str
+    email: str
+    password: str
+
+class ContactBase(BaseModel):
+    contact_name: str
+    phone_number: str
+    msg_llegada: Optional[str] = "¡Hola! {user} llegó a su destino. ✅"
+    msg_salida: Optional[str] = "¡Hola! {user} está volviendo. 🏠"
 
 # --- DB SETUP ---
 
@@ -161,7 +173,78 @@ async def get_current_user(request: Request):
     conn.close()
     return user
 
-# --- RUTAS DASHBOARD & AUTH ---
+# --- RUTAS API (MÓVIL & GENERAL) ---
+
+@app.post("/api/v1/register")
+async def api_register(payload: UserRegister):
+    user_id = str(uuid.uuid4())[:8]
+    api_token = "mama_" + str(uuid.uuid4()).replace("-", "")[:16]
+    pw_hash = get_password_hash(payload.password)
+    
+    try:
+        conn = get_db()
+        conn.execute("INSERT INTO users (id, full_name, email, password_hash, api_token) VALUES (?, ?, ?, ?, ?)",
+                     (user_id, payload.full_name, payload.email.lower(), pw_hash, api_token))
+        conn.commit()
+        conn.close()
+        
+        # Generar token inmediato para loguear tras registro
+        access_token = create_access_token(data={"sub": user_id})
+        return {
+            "status": "success",
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user_id,
+                "full_name": payload.full_name,
+                "email": payload.email.lower()
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"El email ya existe o hubo un error: {e}")
+
+@app.get("/api/v1/contacts")
+async def api_get_contacts(user=Depends(get_current_user)):
+    if not user: raise HTTPException(status_code=401)
+    conn = get_db()
+    contacts = conn.execute("SELECT * FROM contacts WHERE user_id = ?", (user["id"],)).fetchall()
+    conn.close()
+    return contacts
+
+@app.post("/api/v1/contacts")
+async def api_add_contact(payload: ContactBase, user=Depends(get_current_user)):
+    if not user: raise HTTPException(status_code=401)
+    conn = get_db()
+    cursor = conn.execute('''
+        INSERT INTO contacts (user_id, contact_name, phone_number, msg_llegada, msg_salida)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (user["id"], payload.contact_name, payload.phone_number, payload.msg_llegada, payload.msg_salida))
+    contact_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    # Enviar mensaje de vinculación
+    link_msg = f"🔔 ¡Hola {payload.contact_name}! {user['full_name']} te ha agregado a su red de seguridad en Mama-Notifier. Recibirás un aviso por aquí cuando llegue o salga de sus zonas seguras. ✨"
+    send_whatsapp(payload.phone_number, link_msg)
+
+    return {"status": "created", "id": contact_id}
+
+@app.delete("/api/v1/contacts/{contact_id}")
+async def api_delete_contact(contact_id: int, user=Depends(get_current_user)):
+    if not user: raise HTTPException(status_code=401)
+    conn = get_db()
+    conn.execute("DELETE FROM contacts WHERE id = ? AND user_id = ?", (contact_id, user["id"]))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+@app.get("/api/v1/logs")
+async def api_get_logs(user=Depends(get_current_user)):
+    if not user: raise HTTPException(status_code=401)
+    conn = get_db()
+    logs = conn.execute("SELECT * FROM notification_logs WHERE user_id = ? ORDER BY id DESC LIMIT 20", (user["id"],)).fetchall()
+    conn.close()
+    return logs
 
 class LoginAppRequest(BaseModel):
     email: str
@@ -292,6 +375,53 @@ async def add_contact(
     
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
+@app.get("/contacts/edit/{contact_id}")
+async def edit_contact_page(contact_id: int, request: Request, user=Depends(get_current_user)):
+    if not user:
+        raise HTTPException(status_code=401)
+
+    conn = get_db()
+    contact = conn.execute("SELECT * FROM contacts WHERE id = ? AND user_id = ?", (contact_id, user["id"])).fetchone()
+    conn.close()
+
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+
+    return templates.TemplateResponse(
+        "contact_edit.html",
+        {
+            "request": request,
+            "user": user,
+            "contact": contact
+        }
+    )
+
+@app.post("/contacts/edit/{contact_id}")
+async def edit_contact(
+    contact_id: int,
+    name: str = Form(...),
+    phone: str = Form(...),
+    msg_llegada: str = Form(...),
+    msg_salida: str = Form(...),
+    user=Depends(get_current_user)
+):
+    if not user:
+        raise HTTPException(status_code=401)
+
+    conn = get_db()
+    conn.execute(
+        '''
+        UPDATE contacts
+        SET contact_name = ?, phone_number = ?, msg_llegada = ?, msg_salida = ?
+        WHERE id = ? AND user_id = ?
+        ''',
+        (name, phone, msg_llegada, msg_salida, contact_id, user["id"])
+    )
+    conn.commit()
+    conn.close()
+
+    return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+
 @app.get("/contacts/delete/{contact_id}")
 async def delete_contact(contact_id: int, user=Depends(get_current_user)):
     if not user: raise HTTPException(status_code=401)
@@ -316,16 +446,26 @@ async def handle_event(payload: EventPayload, user=Depends(get_current_user)):
     time_str = ahora.strftime("%H:%M")
     
     results = []
+    is_manual = payload.event_type == "manual_check"
+    
     for c in contacts:
-        template = c["msg_llegada"] if payload.event_type == "llegada" else c["msg_salida"]
+        # Si es manual, usamos el mensaje de llegada como base para la prueba
+        actual_event = "llegada" if is_manual else payload.event_type
+        template = c["msg_llegada"] if actual_event == "llegada" else c["msg_salida"]
         mensaje = template.replace("{user}", user["full_name"]).replace("{time}", time_str)
-        
+
+        if is_manual:
+            # Mensaje más claro para chequeos manuales y evitar confusiones
+            mensaje = f"🧪 [CHEQUEO MANUAL — NO ES UN EVENTO REAL]\n{mensaje}"
+
         sid = send_whatsapp(c["phone_number"], mensaje)
-        
+
+        # Guardar en logs indicando que fue un chequeo manual para diferenciarlo
+        log_event_type = "MANUAL_CHECK" if is_manual else payload.event_type
         conn.execute('''
             INSERT INTO notification_logs (user_id, event_type, recipient, status, twilio_sid, timestamp)
             VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user["id"], payload.event_type, c["contact_name"], "sent", sid, ahora.isoformat()))
+        ''', (user["id"], log_event_type, c["contact_name"], "sent", sid, ahora.isoformat()))
         results.append({"contact": c["contact_name"], "sid": sid})
     
     conn.commit()

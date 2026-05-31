@@ -14,12 +14,12 @@ class EventPayload {
   });
 
   Map<String, dynamic> toJson() => {
-    'user_id': userId,
-    'device_id': deviceId,
-    'event_type': eventType,
-    'location_data': {
-      'zone_name': zoneName,
-      'timestamp': timestamp.toIso8601String(),
-    },
-  };
+        'user_id': userId,
+        'device_id': deviceId,
+        'event_type': eventType,
+        'location_data': {
+          'zone_name': zoneName,
+          'timestamp': timestamp.toIso8601String(),
+        },
+      };
 }

@@ -48,7 +48,8 @@ TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN', '').strip().replace('"', '').
 TWILIO_WHATSAPP_NUMBER = normalizar_numero_whatsapp(os.getenv('TWILIO_WHATSAPP_NUMBER', ''))
 MAMA_WHATSAPP_NUMBER = normalizar_numero_whatsapp(os.getenv('MAMA_WHATSAPP_NUMBER', ''))
 WEBHOOK_SECRET_TOKEN = os.getenv('WEBHOOK_SECRET_TOKEN', '').strip()
-DB_NAME = 'mama_notifier.db'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.path.join(BASE_DIR, 'mama_notifier.db')
 
 # --- DIAGNÓSTICO DE VARIABLES ---
 logger.info("--- Diagnóstico de Configuración ---")
