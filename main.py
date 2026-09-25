@@ -3,24 +3,24 @@ import logging
 import sqlite3
 import uuid
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional
 from fastapi import FastAPI, Header, HTTPException, Depends, status, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
-from twilio.rest import Client
 from dotenv import load_dotenv
 import pytz
 import bcrypt
 from jose import JWTError, jwt
+from telegram import Bot
+from telegram.error import TelegramError
 
 # --- CONFIGURACIÓN JWT ---
 load_dotenv()
 
-# --- CONFIGURACIÓN JWT ---
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super_secreto_para_desarrollo_cambiame")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 semana para el móvil
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -41,13 +41,10 @@ ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_NAME = os.path.join(BASE_DIR, 'mama_notifier.db')
 
-# Credenciales maestras de Twilio
-TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID', '').strip()
-TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN', '').strip()
-# IMPORTANTE: TWILIO_WHATSAPP_NUMBER debe ser el número de Twilio (ej: whatsapp:+14155238886)
-TWILIO_WHATSAPP_NUMBER = os.getenv('TWILIO_WHATSAPP_NUMBER', '').strip()
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '').strip()
+bot = Bot(token=TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
 
-app = FastAPI(title="Mama-Notifier SaaS", version="3.1.0")
+app = FastAPI(title="Mama-Notifier SaaS", version="4.0.0")
 templates = Jinja2Templates(directory="templates")
 
 # Seguridad - Hash de contraseñas
@@ -84,7 +81,7 @@ class UserRegister(BaseModel):
 
 class ContactBase(BaseModel):
     contact_name: str
-    phone_number: str
+    chat_id: str
     msg_llegada: Optional[str] = "¡Hola! {user} llegó a su destino. ✅"
     msg_salida: Optional[str] = "¡Hola! {user} está volviendo. 🏠"
 
@@ -113,7 +110,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT,
             contact_name TEXT,
-            phone_number TEXT,
+            chat_id TEXT,
             msg_llegada TEXT,
             msg_salida TEXT,
             FOREIGN KEY(user_id) REFERENCES users(id)
@@ -126,18 +123,24 @@ def init_db():
             event_type TEXT,
             recipient TEXT,
             status TEXT,
-            twilio_sid TEXT,
+            telegram_message_id TEXT,
             timestamp TEXT
         )
     ''')
     
-    # --- MIGRACIONES MANUALES ---
+    # Migraciones
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
     except: pass
     try:
         cursor.execute("ALTER TABLE contacts ADD COLUMN msg_llegada TEXT")
         cursor.execute("ALTER TABLE contacts ADD COLUMN msg_salida TEXT")
+    except: pass
+    try:
+        cursor.execute("ALTER TABLE contacts RENAME COLUMN phone_number TO chat_id")
+    except: pass
+    try:
+        cursor.execute("ALTER TABLE notification_logs RENAME COLUMN twilio_sid TO telegram_message_id")
     except: pass
 
     conn.commit()
@@ -153,7 +156,6 @@ async def get_current_user(request: Request):
 
     if auth and auth.startswith("Bearer "):
         token = auth.split(" ")[1]
-        # Intentar decodificar como JWT (App Móvil)
         payload = decode_access_token(token)
         if payload:
             conn = get_db()
@@ -161,17 +163,29 @@ async def get_current_user(request: Request):
             conn.close()
             return user
     else:
-        # Intentar obtener de la Cookie (Dashboard)
         token = request.cookies.get("session_token")
 
     if not token:
         return None
 
     conn = get_db()
-    # Compatibilidad con token estático (api_token) para el dashboard
     user = conn.execute("SELECT * FROM users WHERE api_token = ?", (token,)).fetchone()
     conn.close()
     return user
+
+# --- TELEGRAM ---
+
+async def send_telegram(chat_id: str, text: str) -> Optional[str]:
+    if not bot:
+        logger.warning(f"Simulando Telegram a {chat_id}: {text}")
+        return f"SIM_{uuid.uuid4().hex[:8]}"
+    
+    try:
+        message = await bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
+        return str(message.message_id)
+    except TelegramError as e:
+        logger.error(f"Error enviando Telegram: {e}")
+        return f"ERROR_{uuid.uuid4().hex[:4]}"
 
 # --- RUTAS API (MÓVIL & GENERAL) ---
 
@@ -188,7 +202,6 @@ async def api_register(payload: UserRegister):
         conn.commit()
         conn.close()
         
-        # Generar token inmediato para loguear tras registro
         access_token = create_access_token(data={"sub": user_id})
         return {
             "status": "success",
@@ -216,16 +229,15 @@ async def api_add_contact(payload: ContactBase, user=Depends(get_current_user)):
     if not user: raise HTTPException(status_code=401)
     conn = get_db()
     cursor = conn.execute('''
-        INSERT INTO contacts (user_id, contact_name, phone_number, msg_llegada, msg_salida)
+        INSERT INTO contacts (user_id, contact_name, chat_id, msg_llegada, msg_salida)
         VALUES (?, ?, ?, ?, ?)
-    ''', (user["id"], payload.contact_name, payload.phone_number, payload.msg_llegada, payload.msg_salida))
+    ''', (user["id"], payload.contact_name, payload.chat_id, payload.msg_llegada, payload.msg_salida))
     contact_id = cursor.lastrowid
     conn.commit()
     conn.close()
 
-    # Enviar mensaje de vinculación
     link_msg = f"🔔 ¡Hola {payload.contact_name}! {user['full_name']} te ha agregado a su red de seguridad en Mama-Notifier. Recibirás un aviso por aquí cuando llegue o salga de sus zonas seguras. ✨"
-    send_whatsapp(payload.phone_number, link_msg)
+    await send_telegram(payload.chat_id, link_msg)
 
     return {"status": "created", "id": contact_id}
 
@@ -269,22 +281,6 @@ async def login_app(payload: LoginAppRequest):
         }
 
     raise HTTPException(status_code=401, detail="Credenciales inválidas")
-
-
-def send_whatsapp(to_phone: str, body: str):
-    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_WHATSAPP_NUMBER:
-        logger.warning(f"Simulando WhatsApp a {to_phone}: {body}")
-        return "SIM_SID_" + str(uuid.uuid4())[:8]
-    
-    try:
-        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        # Asegurar prefijo whatsapp:
-        target = to_phone if to_phone.startswith('whatsapp:') else f"whatsapp:{to_phone}"
-        message = client.messages.create(from_=TWILIO_WHATSAPP_NUMBER, body=body, to=target)
-        return message.sid
-    except Exception as e:
-        logger.error(f"Error enviando Twilio: {e}")
-        return f"ERROR_{str(uuid.uuid4())[:4]}"
 
 # --- RUTAS DASHBOARD ---
 
@@ -350,7 +346,7 @@ async def logout():
 @app.post("/contacts/add")
 async def add_contact(
     name: str = Form(...), 
-    phone: str = Form(...),
+    chat_id: str = Form(...),
     msg_llegada: str = Form("¡Hola! {user} llegó a su destino. ✅"),
     msg_salida: str = Form("¡Hola! {user} está volviendo. 🏠"),
     user=Depends(get_current_user)
@@ -361,17 +357,15 @@ async def add_contact(
     u_name = user["full_name"]
     conn = get_db()
     
-    # 1. Guardar contacto
     conn.execute('''
-        INSERT INTO contacts (user_id, contact_name, phone_number, msg_llegada, msg_salida)
+        INSERT INTO contacts (user_id, contact_name, chat_id, msg_llegada, msg_salida)
         VALUES (?, ?, ?, ?, ?)
-    ''', (user["id"], name, phone, msg_llegada, msg_salida))
+    ''', (user["id"], name, chat_id, msg_llegada, msg_salida))
     conn.commit()
     conn.close()
 
-    # 2. Enviar mensaje de VINCULACIÓN
     link_msg = f"🔔 ¡Hola {name}! {u_name} te ha agregado a su red de seguridad en Mama-Notifier. Recibirás un aviso por aquí cuando llegue o salga de sus zonas seguras. ✨"
-    send_whatsapp(phone, link_msg)
+    await send_telegram(chat_id, link_msg)
     
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -381,26 +375,24 @@ async def edit_contact_page(contact_id: int, request: Request, user=Depends(get_
         raise HTTPException(status_code=401)
 
     conn = get_db()
-    contact = conn.execute("SELECT * FROM contacts WHERE id = ? AND user_id = ?", (contact_id, user["id"])).fetchone()
+    contact_row = conn.execute("SELECT * FROM contacts WHERE id = ? AND user_id = ?", (contact_id, user["id"])).fetchone()
     conn.close()
 
-    if not contact:
+    if not contact_row:
         raise HTTPException(status_code=404, detail="Contacto no encontrado")
 
-    return templates.TemplateResponse(
-        "contact_edit.html",
-        {
-            "request": request,
-            "user": user,
-            "contact": contact
-        }
-    )
+    contact = dict(contact_row)
+
+    # Render template manually to avoid Jinja2 cache issue
+    template = templates.env.get_template("contact_edit.html")
+    html = template.render(request=request, contact=contact)
+    return HTMLResponse(content=html)
 
 @app.post("/contacts/edit/{contact_id}")
 async def edit_contact(
     contact_id: int,
     name: str = Form(...),
-    phone: str = Form(...),
+    chat_id: str = Form(...),
     msg_llegada: str = Form(...),
     msg_salida: str = Form(...),
     user=Depends(get_current_user)
@@ -412,10 +404,10 @@ async def edit_contact(
     conn.execute(
         '''
         UPDATE contacts
-        SET contact_name = ?, phone_number = ?, msg_llegada = ?, msg_salida = ?
+        SET contact_name = ?, chat_id = ?, msg_llegada = ?, msg_salida = ?
         WHERE id = ? AND user_id = ?
         ''',
-        (name, phone, msg_llegada, msg_salida, contact_id, user["id"])
+        (name, chat_id, msg_llegada, msg_salida, contact_id, user["id"])
     )
     conn.commit()
     conn.close()
@@ -449,24 +441,21 @@ async def handle_event(payload: EventPayload, user=Depends(get_current_user)):
     is_manual = payload.event_type == "manual_check"
     
     for c in contacts:
-        # Si es manual, usamos el mensaje de llegada como base para la prueba
         actual_event = "llegada" if is_manual else payload.event_type
         template = c["msg_llegada"] if actual_event == "llegada" else c["msg_salida"]
         mensaje = template.replace("{user}", user["full_name"]).replace("{time}", time_str)
 
         if is_manual:
-            # Mensaje más claro para chequeos manuales y evitar confusiones
-            mensaje = f"🧪 [CHEQUEO MANUAL — NO ES UN EVENTO REAL]\n{mensaje}"
+            mensaje = f"🧪 <b>[CHEQUEO MANUAL — NO ES UN EVENTO REAL]</b>\n{mensaje}"
 
-        sid = send_whatsapp(c["phone_number"], mensaje)
+        msg_id = await send_telegram(c["chat_id"], mensaje)
 
-        # Guardar en logs indicando que fue un chequeo manual para diferenciarlo
         log_event_type = "MANUAL_CHECK" if is_manual else payload.event_type
         conn.execute('''
-            INSERT INTO notification_logs (user_id, event_type, recipient, status, twilio_sid, timestamp)
+            INSERT INTO notification_logs (user_id, event_type, recipient, status, telegram_message_id, timestamp)
             VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user["id"], log_event_type, c["contact_name"], "sent", sid, ahora.isoformat()))
-        results.append({"contact": c["contact_name"], "sid": sid})
+        ''', (user["id"], log_event_type, c["contact_name"], "sent", msg_id, ahora.isoformat()))
+        results.append({"contact": c["contact_name"], "message_id": msg_id})
     
     conn.commit()
     conn.close()
@@ -489,12 +478,12 @@ async def simulate_event(event_type: str, user=Depends(get_current_user)):
         template = c["msg_llegada"] if event_type == "llegada" else c["msg_salida"]
         mensaje = template.replace("{user}", user["full_name"]).replace("{time}", time_str)
         
-        sid = send_whatsapp(c["phone_number"], mensaje)
+        msg_id = await send_telegram(c["chat_id"], mensaje)
         
         conn.execute('''
-            INSERT INTO notification_logs (user_id, event_type, recipient, status, twilio_sid, timestamp)
+            INSERT INTO notification_logs (user_id, event_type, recipient, status, telegram_message_id, timestamp)
             VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user["id"], f"SIM_{event_type}", c["contact_name"], "sent", sid, ahora.isoformat()))
+        ''', (user["id"], f"SIM_{event_type}", c["contact_name"], "sent", msg_id, ahora.isoformat()))
     
     conn.commit()
     conn.close()

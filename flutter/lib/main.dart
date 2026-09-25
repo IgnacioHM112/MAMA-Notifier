@@ -510,7 +510,7 @@ class _ContactsTabState extends State<ContactsTab> {
 
   void _showAddDialog() {
     final nameCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
+    final chatIdCtrl = TextEditingController();
     final arrivalCtrl = TextEditingController(text: '¡Hola! {user} llegó a su destino. ✅');
     final departureCtrl = TextEditingController(text: '¡Hola! {user} está volviendo. 🏠');
     bool isSaving = false;
@@ -525,7 +525,9 @@ class _ContactsTabState extends State<ContactsTab> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nombre')),
-                TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'WhatsApp (ej: +549...)')),
+                TextField(controller: chatIdCtrl, decoration: const InputDecoration(labelText: 'Chat ID de Telegram (número)')),
+                const SizedBox(height: 8),
+                const Text('💡 Obtén tu Chat ID escribiendo @userinfobot en Telegram', style: TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 16),
                 const Text('Mensajes Personalizados:', style: TextStyle(fontWeight: FontWeight.bold)),
                 TextField(controller: arrivalCtrl, decoration: const InputDecoration(labelText: 'Al llegar')),
@@ -546,9 +548,9 @@ class _ContactsTabState extends State<ContactsTab> {
               onPressed: isSaving 
                 ? null 
                 : () async {
-                    if (nameCtrl.text.isEmpty || phoneCtrl.text.isEmpty) {
+                    if (nameCtrl.text.isEmpty || chatIdCtrl.text.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Nombre y Teléfono son obligatorios'))
+                        const SnackBar(content: Text('Nombre y Chat ID son obligatorios'))
                       );
                       return;
                     }
@@ -556,7 +558,7 @@ class _ContactsTabState extends State<ContactsTab> {
                     setStateDialog(() => isSaving = true);
                     final success = await _apiService.addContact(
                       nameCtrl.text, 
-                      phoneCtrl.text, 
+                      chatIdCtrl.text, 
                       arrivalCtrl.text, 
                       departureCtrl.text
                     );
@@ -600,7 +602,7 @@ class _ContactsTabState extends State<ContactsTab> {
                       child: ListTile(
                         leading: const CircleAvatar(child: Icon(Icons.person)),
                         title: Text(c['contact_name']),
-                        subtitle: Text(c['phone_number']),
+                        subtitle: Text('Chat ID: ${c['chat_id']}'),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red),
                           onPressed: () async {

@@ -1,5 +1,3 @@
-flask
-twilio
 python-dotenv
 pytz
 fastapi
@@ -10,3 +8,4 @@ jinja2
 python-multipart
 passlib[bcrypt]
 python-jose[cryptography]
+python-telegram-bot

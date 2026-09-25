@@ -84,7 +84,7 @@ class ApiService {
     return [];
   }
 
-  Future<bool> addContact(String name, String phone, String arrivalMsg, String departureMsg) async {
+  Future<bool> addContact(String name, String chatId, String arrivalMsg, String departureMsg) async {
     try {
       final token = await getStoredToken();
       final response = await http.post(
@@ -95,7 +95,7 @@ class ApiService {
         },
         body: jsonEncode({
           'contact_name': name,
-          'phone_number': phone,
+          'chat_id': chatId,
           'msg_llegada': arrivalMsg,
           'msg_salida': departureMsg,
         }),

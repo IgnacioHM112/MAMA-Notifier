@@ -1,79 +1,121 @@
-# 🚀 MAMA-Notifier (WhatsApp)
+# 🚀 MAMA-Notifier (Telegram)
 
-Un sistema de notificaciones automático diseñado para enviar avisos de llegada y salida a través de WhatsApp (vía Twilio). Ideal para mantener a la familia informada sobre estados de traslado con un solo clic/webhook, integrando persistencia en base de datos y manejo preciso de horarios.
+Sistema de notificaciones automático que avisa a contactos por **Telegram** cuando una persona llega o sale de zonas seguras (casa, trabajo, escuela). Backend SaaS multi-usuario + App móvil Flutter con monitoreo Wi-Fi en background.
 
 ## ✨ Características
-- **Notificaciones instantáneas:** Envía mensajes personalizados a través de la API de WhatsApp de Twilio.
-- **Persistencia de datos:** Registra cada evento (llegada/salida) en una base de datos SQLite con éxito/fallo y SID de Twilio.
-- **Manejo de Horarios:** Configurado específicamente para la zona horaria de **Argentina (UTC-3)**, asegurando que los timestamps en los mensajes y la DB sean siempre precisos.
-- **Dockerizado:** Fácil de desplegar en cualquier entorno mediante Docker y Docker Compose.
-- **Seguridad:** Protección de endpoints mediante tokens Bearer.
-- **Logs robustos:** Rotación de archivos de log con soporte para caracteres especiales (UTF-8).
+- **Notificaciones instantáneas por Telegram** (gratis, sin sandbox, sin plantillas)
+- **Multi-usuario SaaS**: Auth JWT, cada usuario gestiona sus contactos y mensajes
+- **Monitoreo Wi-Fi automático** en Android/iOS (Foreground Service + WorkManager)
+- **Dashboard web** para gestionar contactos, simular eventos y ver historial
+- **Persistencia SQLite**: usuarios, contactos (chat_id), logs de notificaciones
+- **Zona horaria Argentina (UTC-3)** forzada en todo el sistema
+- **Dockerizado** para deploy sencillo en VPS/Railway/Render/Fly.io
 
 ## 🛠️ Stack Tecnológico
-- **Lenguaje:** Python 3.11
-- **Framework Web:** Flask
-- **Base de Datos:** SQLite
-- **Comunicación:** Twilio (WhatsApp Business API)
-- **Despliegue:** Docker / Docker Compose / ngrok
+- **Backend**: FastAPI, Uvicorn, SQLite, JWT (HS256), bcrypt, python-telegram-bot
+- **Dashboard**: Jinja2 + TailwindCSS (via CDN)
+- **App Móvil**: Flutter, `flutter_foreground_task`, `workmanager`, `connectivity_plus`, `flutter_secure_storage`
+- **Deploy**: Docker + Docker Compose
+
+---
 
 ## 🚀 Configuración e Instalación
 
 ### 1. Requisitos Previos
-- Docker y Docker Compose instalados.
-- Cuenta de [Twilio](https://www.twilio.com/) con el Sandbox de WhatsApp activo.
-- [ngrok](https://ngrok.com/) para exponer el servidor local (opcional para desarrollo).
+- Docker y Docker Compose
+- Bot de Telegram (crear con **@BotFather** → `/newbot`)
+- Chat ID de cada contacto (escribir a **@userinfobot** en Telegram)
 
 ### 2. Variables de Entorno
-Crea un archivo `.env` en la raíz del proyecto basado en `.env.example`:
+Crea `.env` basado en `.env.example`:
 ```env
-TWILIO_ACCOUNT_SID=tu_sid_aqui
-TWILIO_AUTH_TOKEN=tu_token_aqui
-TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
-MAMA_WHATSAPP_NUMBER=whatsapp:+549...
-WEBHOOK_SECRET_TOKEN=tu_token_seguro
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+JWT_SECRET_KEY=clave_super_secreta_de_64_caracteres_minimo_cambiala_en_produccion
 ```
 
 ### 3. Despliegue con Docker
-Construye y levanta el servicio:
 ```bash
 docker-compose up --build -d
 ```
+La API queda en `http://localhost:5000`
 
-### 4. Uso del Webhook
-El sistema expone dos acciones principales:
-- `POST /webhook/llegada`
-- `POST /webhook/salida`
-
-**Ejemplo de llamada con cURL:**
-```bash
-curl -X POST http://tu-url.ngrok.io/webhook/llegada \
-     -H "Authorization: Bearer tu_token_seguro"
-```
-
-## 📝 Estructura de la Base de Datos
-La tabla `historial_eventos` almacena:
-- `id`: Identificador único.
-- `tipo_evento`: 'llegada' o 'salida'.
-- `fecha_hora`: Timestamp exacto (Argentina).
-- `estado_envio`: Booleano (éxito/fallo).
-- `twilio_sid`: ID de rastreo del mensaje de Twilio.
-
-## 🇦🇷 Notas sobre el Horario
-El sistema fuerza el uso de `America/Argentina/Buenos_Aires` tanto para el texto de los mensajes como para el almacenamiento en SQLite, evitando desajustes por el reloj del servidor (UTC).
+### 4. Uso
+1. Abre `http://localhost:5000` → Regístrate / Inicia sesión
+2. En **Configurar Contactos** añade nombre + **Chat ID de Telegram** + mensajes personalizados
+3. En la **App Flutter**: Login → Configura SSID de tu Wi-Fi seguro → Activa "Modo Guardián"
+4. Al conectar/desconectar del Wi-Fi configurado → se envía notificación a Telegram
 
 ---
-Desarrollado con ❤️ para mantener a la familia comunicada.
 
-## 🔐 Autenticación para App Móvil (JWT / Bearer)
+## 📱 Obtener Chat ID de Telegram
+1. Abre Telegram y busca **@userinfobot**
+2. Envía `/start`
+3. Te responderá con tu `Id: 123456789` (ese es el `chat_id`)
+4. Úsalo al agregar contactos en el dashboard o la app
 
-Si vas a integrar la App móvil (por ejemplo, Flutter), el servidor usa JWT para autenticar peticiones desde el teléfono. Flujo resumido:
+---
 
-- Endpoint de login (obtener token): `POST /api/v1/login` con JSON `{ "email": "usuario@ejemplo.com", "password": "tu_password" }`. Respuesta: `{ "access_token": "eyJ...", "token_type": "bearer" }`.
-- Guardá `access_token` de forma segura en el teléfono (por ejemplo `flutter_secure_storage`). No guardes la contraseña.
-- Al enviar eventos desde la App (endpoint real): `POST /api/v1/events` agrega el header `Authorization: Bearer <access_token>`.
+## 📝 Estructura de la Base de Datos
+- `users`: id, full_name, email, password_hash, api_token
+- `contacts`: id, user_id, contact_name, **chat_id**, msg_llegada, msg_salida
+- `notification_logs`: id, user_id, event_type, recipient, status, telegram_message_id, timestamp
 
-Ejemplo corto (cliente):
+---
 
-1) `POST /api/v1/login` → recibir `access_token`.
-2) `POST /api/v1/events` con `Authorization: Bearer <token>` y body JSON del evento.
+## 🇦🇷 Zona Horaria
+El sistema fuerza `America/Argentina/Buenos_Aires` para timestamps en mensajes y BD.
+
+---
+
+## 🔐 Autenticación App Móvil (JWT / Bearer)
+- `POST /api/v1/login` → `{ "access_token": "...", "token_type": "bearer" }`
+- Guardar token en `flutter_secure_storage`
+- `POST /api/v1/events` con header `Authorization: Bearer <token>`
+
+---
+
+## 🌐 Deploy en Producción (No Vercel)
+**Vercel NO sirve**: es serverless (sin procesos largos, sin FS persistente, sin background workers).
+
+**Opciones recomendadas (~$5-7/mes):**
+- **Railway** / **Render** / **Fly.io** (Docker nativo, fácil)
+- **VPS** (DigitalOcean, Hetzner, Contabo) + Docker Compose + Nginx + Certbot (HTTPS)
+
+Checklist producción:
+- [ ] `JWT_SECRET_KEY` única y aleatoria (64+ chars)
+- [ ] HTTPS/TLS (Certbot/Let's Encrypt)
+- [ ] `TELEGRAM_BOT_TOKEN` de bot de producción
+- [ ] Compilar APK/IPA: `flutter build apk --release` / `flutter build ios --release`
+
+---
+
+## 📋 Estructura del Proyecto
+```
+MAMA-Notifier/
+├── main.py                 # FastAPI backend (Telegram)
+├── requirements.txt        # Python deps
+├── Dockerfile / docker-compose.yml
+├── .env.example
+├── templates/              # login.html, dashboard.html, contact_edit.html
+├── flutter/
+│   ├── pubspec.yaml
+│   └── lib/
+│       ├── main.dart       # App completa (GUI + Guardián)
+│       ├── api_service.dart
+│       ├── wifi_monitor.dart
+│       └── event_model.dart
+└── docs: README.md, PRESENTACION.md, ESTADO_FINAL.md
+```
+
+---
+
+## 🎯 Estado Actual
+- ✅ Backend FastAPI + JWT + Telegram Bot API
+- ✅ Dashboard web completo
+- ✅ App Flutter con Modo Guardián (background Wi-Fi monitoring)
+- ✅ Docker listo para deploy
+- ⚠️ Pendiente: HTTPS, compilar builds móviles, deploy en cloud
+
+---
+
+Desarrollado para mantener a la familia comunicada sin complicaciones.

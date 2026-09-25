@@ -1,0 +1,29 @@
+.env
+.env.local
+mama_notifier.db
+mama_notifier.log
+__pycache__
+*.pyc
+.pytest_cache
+.coverage
+*.log
+.DS_Store
+*.swp
+*.swo
+*~
+.idea
+.vscode
+*.iml
+flutter
+docker-compose.override.yml
+docker-compose.yml
+Dockerfile
+ngrok.exe
+README.md
+PRESENTACION.md
+ESTADO_FINAL.md
+UPLOAD_ANDROID.md
+Como arrancarlo.txt
+Ante cualquier cosa
+.git
+.gitignore

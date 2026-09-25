@@ -1,88 +1,105 @@
-# 🎯 Estado Final - MAMA-Notifier Listo para Producción
+# 🎯 Estado Final - MAMA-Notifier (Telegram) Listo para Testing
 
 ## ✅ Completado
 
-### 1. **Seguridad JWT**
-- ✅ Nueva clave `JWT_SECRET_KEY` rotada (64 caracteres) en `.env`
-- ✅ Servidor (`main.py`) carga `.env` correctamente antes de leer la clave
-- ✅ Endpoints autenticados con Bearer tokens
+### 1. **Migración Twilio → Telegram**
+- ✅ Eliminado `twilio` de dependencias
+- ✅ Agregado `python-telegram-bot` (async)
+- ✅ `TELEGRAM_BOT_TOKEN` como única credencial
+- ✅ Contactos usan `chat_id` (numérico) en lugar de teléfono WhatsApp
+- ✅ Logs guardan `telegram_message_id` en lugar de `twilio_sid`
 
-### 2. **App Móvil (Flutter)**
-- ✅ `api_service.dart` actualizado con:
-  - Función `login()` para obtener token JWT
-  - Función `getStoredToken()` para recuperar token guardado
-  - Función `sendLocationEvent()` que envía Authorization Bearer en header
-  - Función `logout()` para limpiar sesión
-  - TODO comentados para usar `flutter_secure_storage` en producción
+### 2. **Limpieza de Código Legacy**
+- ✅ Eliminado `app.py` (Flask webhook simple)
+- ✅ Eliminados archivos sueltos: `Como arrancarlo.txt`, `Ante cualquier cosa`, `UPLOAD_ANDROID.md`, `ngrok.exe`, logs, DB vieja, `__pycache__`
+- ✅ Solo queda `main.py` (FastAPI) como backend único
 
-### 3. **Servidor (FastAPI)**
-- ✅ Endpoint `/api/v1/login` → devuelve `access_token` y `token_type: "bearer"`
-- ✅ Endpoint `/api/v1/events` → valida Bearer token y procesa evento
-- ✅ Soporte para dashboard web + app móvil simultáneamente
+### 3. **Backend (FastAPI v4.0.0)**
+- ✅ Auth JWT + Dashboard cookies
+- ✅ CRUD Contactos con `chat_id`
+- ✅ Endpoint móvil `/api/v1/events` → envía Telegram a todos los contactos
+- ✅ Simulación desde dashboard (`/simulate/llegada|salida`)
+- ✅ Migraciones automáticas BD (rename columns phone_number→chat_id, twilio_sid→telegram_message_id)
 
-### 4. **Documentación**
-- ✅ `README.md` → instrucciones de autenticación OAuth2/Bearer
-- ✅ `PRESENTACION.md` → pitch de venta (no técnico, para vender)
-- ✅ `flutter/CLIENT_SNIPPET.md` → ejemplo de cliente Flutter
-- ✅ `flutter/api_service.dart` → implementación completa lista para usar
+### 4. **App Móvil (Flutter)**
+- ✅ `api_service.dart`: `addContact` usa `chat_id`
+- ✅ `main.dart`: Formulario contactos pide Chat ID + ayuda @userinfobot
+- ✅ Lista contactos muestra Chat ID
+- ✅ Modo Guardián: Foreground Service + WorkManager + conectividad Wi-Fi
 
-### 5. **Infraestructura**
-- ✅ Docker + Docker Compose activo (`mama-notifier-app` corriendo)
-- ✅ Base de datos SQLite con tablas de usuarios, contactos, logs
-- ✅ Twilio configurado (WhatsApp API integrada)
+### 5. **Dashboard Web**
+- ✅ `dashboard.html`: Formulario y lista usan `chat_id`
+- ✅ `contact_edit.html`: Campo `chat_id` + ayuda
+- ✅ `login.html`: Texto actualizado a Telegram
 
-## 🧪 Pruebas Realizadas
+### 6. **Infraestructura**
+- ✅ `Dockerfile` sin `--reload` (producción)
+- ✅ `docker-compose.yml` listo
+- ✅ `.env.example` actualizado
+- ✅ `README.md` reescrito completo
+
+### 7. **Documentación**
+- ✅ `README.md`: Instrucciones Telegram, deploy options, obtener chat_id
+- ⚠️ `PRESENTACION.md`: Pitch de venta (pendiente actualizar a Telegram)
+- ⚠️ `ESTADO_FINAL.md`: Este archivo
+
+---
+
+## 🧪 Pruebas Realizadas (Pendientes)
 
 | Endpoint | Método | Status | Resultado |
 |----------|--------|--------|-----------|
-| `/register` | POST | 200 | ✅ Usuario creado |
-| `/api/v1/login` | POST | 200 | ✅ Token JWT obtenido |
-| `/api/v1/events` | POST (con Bearer token) | 200 | ✅ Evento aceptado |
-
-## 📱 Cómo se Deploy la App
-
-1. **Backend (servidor)**:
-   - Ya está corriendo en Docker en `localhost:5000`
-   - En producción: desplegar en AWS/Heroku/DigitalOcean (cambiar JWT_SECRET_KEY)
-   - URL será: `https://mi-dominio.com`
-
-2. **Frontend (Flutter app)**:
-   - Compilar APK: `flutter build apk --release`
-   - Compilar IPA (iOS): `flutter build ios --release`
-   - Distribuir vía Play Store / App Store
-   - Usuarios hacen login → obtienen token → app envía eventos automáticamente
-
-3. **Dashboard web** (opcional):
-   - Acceder en `http://localhost:5000` (o `https://mi-dominio.com`)
-   - Login con usuario/contraseña
-   - Gestionar contactos y simular eventos
-
-## 🔐 Checklist de Seguridad
-
-- ✅ JWT_SECRET_KEY está fuerte (64 caracteres)
-- ✅ Contraseñas hasheadas con bcrypt
-- ✅ Tokens expiran en 1 semana
-- ✅ NO se guardan contraseñas en la app (solo tokens)
-- ⚠️ **TODO EN PRODUCCIÓN**: Usar HTTPS (certificado SSL/TLS)
-- ⚠️ **TODO EN PRODUCCIÓN**: Reemplazar `JWT_SECRET_KEY` con una única y aleatoria
-- ⚠️ **TODO EN PRODUCCIÓN**: Usar `flutter_secure_storage` en lugar de variable global
-
-## 🚀 Próximos Pasos (Mañana)
-
-1. Cambiar URL base de la app del localhost al servidor real
-2. Cambiar JWT_SECRET_KEY a una clave nueva y única
-3. Configurar HTTPS + certificado SSL
-4. Compilar APK/IPA finales
-5. Deploy en Play Store / App Store
-
-## 📋 Resumen Técnico
-
-- **API**: FastAPI (uvicorn)
-- **Auth**: JWT con HS256
-- **BD**: SQLite (usuarios, contactos, logs)
-- **App móvil**: Flutter (HTTP client)
-- **Notificaciones**: Twilio WhatsApp
-- **Hosteo**: Docker
+| `/register` | POST | ⏳ | Por probar |
+| `/api/v1/login` | POST | ⏳ | Por probar |
+| `/api/v1/events` | POST (Bearer) | ⏳ | Por probar |
+| `/contacts/add` | POST (Form) | ⏳ | Por probar |
+| `send_telegram()` | - | ⏳ | Por probar con token real |
 
 ---
-**Estado**: 🟢 LISTO PARA TESTING Y DEPLOY
+
+## 📱 Cómo Probar Localmente
+
+1. **Crear bot en @BotFather** → copiar `TELEGRAM_BOT_TOKEN`
+2. **Obtener tu chat_id** → escribir a @userinfobot
+3. **Crear `.env`**:
+   ```env
+   TELEGRAM_BOT_TOKEN=tu_token_aqui
+   JWT_SECRET_KEY=clave_desarrollo_64_chars_minimo_abcdefghijklmnopqrstuvwxyz
+   ```
+4. **Levantar**:
+   ```bash
+   docker-compose up --build
+   ```
+5. **Abrir** `http://localhost:5000` → Registrarse → Agregar contacto con tu chat_id → Simular llegada
+
+---
+
+## 🌐 Deploy en Producción
+
+**NO Vercel** (serverless, sin procesos persistentes).
+
+**Opciones (~$5-7/mes):**
+- **Railway** / **Render** / **Fly.io** → `docker-compose up` nativo
+- **VPS** (Hetzner CX22 ~€4, DigitalOcean $6) + Docker + Nginx + Certbot
+
+Checklist producción:
+- [ ] `JWT_SECRET_KEY` única 64+ chars aleatoria
+- [ ] HTTPS/TLS (Certbot)
+- [ ] `TELEGRAM_BOT_TOKEN` bot producción
+- [ ] Compilar APK: `flutter build apk --release`
+- [ ] Compilar IPA: `flutter build ios --release` (requiere macOS)
+
+---
+
+## 📋 Resumen Técnico Actualizado
+
+- **API**: FastAPI (uvicorn) + python-telegram-bot (async)
+- **Auth**: JWT HS256 (1 semana expiry) + bcrypt
+- **BD**: SQLite (users, contacts[chat_id], notification_logs[telegram_message_id])
+- **App móvil**: Flutter + Foreground Service + WorkManager
+- **Notificaciones**: Telegram Bot API (gratis, sin límites razonables)
+- **Hosteo**: Docker en VPS/Railway/Render/Fly.io
+
+---
+
+**Estado**: 🟡 **LISTO PARA TESTING LOCAL CON TOKEN REAL**
