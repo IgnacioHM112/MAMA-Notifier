@@ -39,7 +39,11 @@ logger = logging.getLogger("MAMA-NOTIFIER-SAAS")
 
 ARG_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_NAME = os.path.join(BASE_DIR, 'mama_notifier.db')
+# Use Railway volume /data if present, otherwise local file
+if os.path.isdir("/data"):
+    DB_NAME = "/data/mama_notifier.db"
+else:
+    DB_NAME = os.path.join(BASE_DIR, "mama_notifier.db")
 
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '').strip()
 bot = Bot(token=TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
