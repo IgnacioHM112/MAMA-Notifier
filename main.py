@@ -496,6 +496,11 @@ async def simulate_event(event_type: str, user=Depends(get_current_user)):
     conn.close()
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
+# --- PÁGINA INFORMATIVA ---
+@app.get("/acerca", response_class=HTMLResponse)
+async def about_page(request: Request):
+    return templates.TemplateResponse("about.html", {"request": request})
+
 @app.get("/debug/users")
 async def debug_users():
     conn = get_db()

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Acerca de · Mama-Notifier{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <header class="mb-12 text-center">
+        <h1 class="text-4xl font-bold text-slate-800 dark:text-slate-100 mb-4">¿Qué es Mama‑Notifier?</h1>
+        <p class="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
+            Una aplicación sencilla que avisa automáticamente a tus seres queridos cuando llegas o sales de lugares importantes (casa, trabajo, escuela).
+        </p>
+    </header>
+
+    <section class="space-y-10">
+        <article class="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+            <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+                <span class="text-3xl">🛡️</span> Tranquilidad para la familia
+            </h2>
+            <p class="text-slate-600 dark:text-slate-300 leading-relaxed">
+                Evita llamadas o mensajes repetidos preguntando “¿Llegaste bien?”. Mama‑Notifier envía un aviso por <strong>Telegram</strong> en cuanto tu móvil detecta que te conectaste o desconectaste del Wi‑Fi de un lugar configurado.
+            </p>
+        </article>
+
+        <article class="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+            <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+                <span class="text-3xl">⚙️</span> Cómo funciona (sin términos técnicos)
+            </h2>
+            <ol class="list-decimal list-inside space-y-3 text-slate-600 dark:text-slate-300">
+                <li>Instalas la app en tu teléfono y le dices cuál es tu Wi‑Fi de “casa” (o del trabajo).</li>
+                <li>Cuando entras o sales de esa red, la app manda una notificación a los contactos que hayas elegido.</li>
+                <li>Los contactos reciben un mensaje personalizado en Telegram (ej. “¡María llegó a casa a las 18:32 ✅”).</li>
+            </ol>
+        </article>
+
+        <article class="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+            <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+                <span class="text-3xl">🔒</span> Privacidad y control
+            </h2>
+            <ul class="list-disc list-inside space-y-2 text-slate-600 dark:text-slate-300">
+                <li>Solo tú decides quién recibe los avisos.</li>
+                <li>Los mensajes se envían por Telegram, no guardamos el contenido.</li>
+                <li>Puedes activar o desactivar el monitoreo cuando quieras.</li>
+            </ul>
+        </article>
+
+        <article class="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+            <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+                <span class="text-3xl">📲</span> Primeros pasos
+            </h2>
+            <ol class="list-decimal list-inside space-y-3 text-slate-600 dark:text-slate-300">
+                <li>Crea tu cuenta en la web (botón “Registro”).</li>
+                <li>En “Configurar Contactos” añade el nombre y el <strong>Chat ID de Telegram</strong> de cada persona (pídeles que escriban a <code>@userinfobot</code> en Telegram).</li>
+                <li>En la app móvil, inicia sesión, pon el nombre exacto de tu Wi‑Fi seguro y pulsa “Activar Modo Guardián”.</li>
+                <li>¡Listo! A partir de ahora los avisos salen solos.</li>
+            </ol>
+        </article>
+    </section>
+
+    <footer class="mt-12 text-center text-slate-500 dark:text-slate-400 text-sm">
+        <p>Mama‑Notifier · Hecho para que la familia esté tranquila sin complicaciones.</p>
+    </footer>
+{% endblock %}

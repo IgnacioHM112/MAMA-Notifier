@@ -4,7 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'event_model.dart';
 
 class ApiService {
-  final String baseUrl = "https://straining-fiscally-regulator.ngrok-free.dev/api/v1";
+  final String baseUrl = "https://mama-notifier-production.up.railway.app/api/v1";
   final _storage = const FlutterSecureStorage();
   String? _cachedToken;
 
