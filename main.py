@@ -45,6 +45,8 @@ if os.path.isdir("/data"):
 else:
     DB_NAME = os.path.join(BASE_DIR, "mama_notifier.db")
 
+logger.info(f"Using database file: {DB_NAME}")
+
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '').strip()
 bot = Bot(token=TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
 
@@ -492,6 +494,17 @@ async def simulate_event(event_type: str, user=Depends(get_current_user)):
     conn.commit()
     conn.close()
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+
+@app.get("/debug/users")
+async def debug_users():
+    conn = get_db()
+    rows = conn.execute("SELECT id, full_name, email FROM users").fetchall()
+    conn.close()
+    return [{"id": r["id"], "full_name": r["full_name"], "email": r["email"]} for r in rows]
+
+@app.get("/debug/dbpath")
+async def debug_dbpath():
+    return {"db_path": DB_NAME, "data_dir_exists": os.path.isdir("/data")}
 
 if __name__ == "__main__":
     import uvicorn
