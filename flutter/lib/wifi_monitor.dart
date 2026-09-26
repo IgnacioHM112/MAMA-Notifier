@@ -56,8 +56,8 @@ class WifiMonitor {
     _subscription = null;
   }
 
-  Future<void> checkAndSendEvent({bool background = false, bool force = false}) async {
-    final currentSafe = await isConnectedToSafeWifi();
+  Future<void> checkAndSendEvent({bool background = false, bool force = false, bool? connected}) async {
+    final currentSafe = connected ?? await isConnectedToSafeWifi();
     final previousSafe = await _getLastSafeState();
 
     bool shouldSend = false;

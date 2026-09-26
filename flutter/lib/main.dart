@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'api_service.dart';
 import 'wifi_monitor.dart';
+import 'wifi_native.dart';
 import 'foreground_service.dart';
 import 'event_model.dart'; // Importante: Asegurar que este import esté presente
 
@@ -11,7 +12,8 @@ const String wifiTaskName = 'wifiMonitorTask';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Workmanager().initialize(callbackDispatcher);
+  // Workmanager disabled – native Wi‑Fi push handles background monitoring
+  // await Workmanager().initialize(callbackDispatcher);
   runApp(const MyApp());
 }
 
@@ -264,6 +266,7 @@ class _MonitorTabState extends State<MonitorTab> {
   String? _userId;
   String? _deviceId;
   WifiMonitor? _liveMonitor;
+  NativeWifiListener? _nativeWifi;
 
   @override
   void initState() {
@@ -277,16 +280,16 @@ class _MonitorTabState extends State<MonitorTab> {
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'mama_notifier_channel',
         channelName: 'Mama-Notifier Guardián',
-        channelDescription: 'Mantiene el monitoreo de Wi-Fi activo.',
-        channelImportance: NotificationChannelImportance.LOW,
-        priority: NotificationPriority.LOW,
+        channelDescription: 'Monitorea Wi‑Fi en segundo plano.',
+        channelImportance: NotificationChannelImportance.HIGH,
+        priority: NotificationPriority.HIGH,
       ),
       iosNotificationOptions: const IOSNotificationOptions(
         showNotification: true,
         playSound: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.nothing(),
+        eventAction: ForegroundTaskEventAction.repeat(10000), // heartbeat every 10 s
         autoRunOnBoot: true,
         allowWakeLock: true,
         allowWifiLock: true,
@@ -350,12 +353,20 @@ class _MonitorTabState extends State<MonitorTab> {
         zoneName: zone,
       );
       await _liveMonitor?.startForegroundMonitoring();
+
+      // 3. Native Wi‑Fi push listener
+      _nativeWifi = NativeWifiListener();
+      _nativeWifi!.start((connected) {
+        _liveMonitor?.checkAndSendEvent(connected: connected);
+      });
       
       _updateStatus('🚀 Guardián activado. Puedes cerrar la app.');
     } else {
       await FlutterForegroundTask.stopService();
       await _liveMonitor?.stopForegroundMonitoring();
       _liveMonitor = null;
+      _nativeWifi?.stop();
+      _nativeWifi = null;
       _updateStatus('🛑 Monitoreo desactivado.');
     }
     setState(() => _monitoringEnabled = start);
