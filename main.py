@@ -506,6 +506,22 @@ async def debug_users():
 async def debug_dbpath():
     return {"db_path": DB_NAME, "data_dir_exists": os.path.isdir("/data")}
 
+@app.get("/debug/raw")
+async def debug_raw():
+    conn = get_db()
+    # list tables
+    tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    # count users
+    cnt = conn.execute("SELECT COUNT(*) as c FROM users").fetchone()
+    # show first few users raw
+    sample = conn.execute("SELECT * FROM users LIMIT 5").fetchall()
+    conn.close()
+    return {
+        "tables": [t["name"] for t in tables],
+        "users_count": cnt["c"] if cnt else 0,
+        "sample_users": [dict(r) for r in sample]
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5000)
