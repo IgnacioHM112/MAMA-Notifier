@@ -87,6 +87,22 @@
             tabLogin.classList.add('text-slate-500');
             subtitle.innerText = 'Crea tu cuenta de Tranquilidad Familiar';
         }
+
+        // Show error banner if ?error=1 in URL
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('error')) {
+                // Ensure login tab is active
+                showLogin();
+                // Create error banner
+                const errDiv = document.createElement('div');
+                errDiv.className = 'bg-rose-100 border border-rose-400 text-rose-700 px-4 py-3 rounded-xl mb-6 text-center text-sm';
+                errDiv.textContent = 'Credenciales inválidas. Intenta de nuevo.';
+                loginForm.prepend(errDiv);
+                // Clean URL without reload
+                history.replaceState(null, '', '/');
+            }
+        })();
     </script>
 </body>
 </html>

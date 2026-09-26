@@ -339,7 +339,8 @@ async def login(email: str = Form(...), password: str = Form(...)):
         response.set_cookie(key="session_token", value=user["api_token"])
         return response
     
-    return "Error: Credenciales inválidas."
+    # Redirect back to login page with error flag
+    return RedirectResponse(url="/?error=1", status_code=status.HTTP_303_SEE_OTHER)
 
 @app.get("/logout")
 async def logout():
