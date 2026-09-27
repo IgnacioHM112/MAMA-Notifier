@@ -143,7 +143,7 @@ class WifiMonitor {
       _log('checkAndSendEvent: START background=$background force=$force connected=$connected');
       final currentSafe = connected ?? await isConnectedToSafeWifi();
       _log('checkAndSendEvent: currentSafe=$currentSafe');
-      final previousSafe = await _getLastSafeState();
+      final bool? previousSafe = await _getLastSafeState();
       _log('checkAndSendEvent: previousSafe=$previousSafe');
 
       final now = DateTime.now();
@@ -157,7 +157,7 @@ class WifiMonitor {
       }
       
       final isStable = _stateStableSince != null && now.difference(_stateStableSince!) >= const Duration(seconds: 5);
-      _log('checkAndSendEvent: currentSafe=$currentSafe, isStable=$isStable, stableSince=${_stateStableSince?.toIso8601String()}');
+      _log('checkAndSendEvent: currentSafe=$currentSafe, isStable=$isStable, stableSince=${_stateStableSince?.toIso8601String()}, lastKnownSafe=$_lastKnownSafe');
 
       bool shouldSend = false;
       String? eventType;
@@ -166,6 +166,15 @@ class WifiMonitor {
         shouldSend = true;
         eventType = currentSafe ? 'llegada' : 'salida';
         _log('FORCE=true -> shouldSend=true');
+      } else if (previousSafe == null) {
+        // FIRST CHECK EVER: establish baseline, send if connected
+        if (currentSafe) {
+          shouldSend = true;
+          eventType = 'llegada';
+          _log('FIRST CHECK: establishing baseline, connected -> shouldSend=true');
+        } else {
+          _log('FIRST CHECK: establishing baseline, disconnected -> no event');
+        }
       } else if (currentSafe && !previousSafe && isStable) {
         shouldSend = true;
         eventType = 'llegada';
@@ -209,13 +218,14 @@ class WifiMonitor {
     }
   }
 
-  Future<bool> _getLastSafeState() async {
+  Future<bool?> _getLastSafeState() async {
     try {
       final stored = await _storage.read(key: 'last_safe_wifi_state');
+      if (stored == null) return null;
       return stored == 'true';
     } catch (e) {
       _log('_getLastSafeState ERROR: $e');
-      return false;
+      return null;
     }
   }
 
