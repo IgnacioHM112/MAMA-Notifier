@@ -148,17 +148,6 @@ class WifiMonitor {
 
       final now = DateTime.now();
       
-      // Ventana de estabilidad: el estado debe ser consistente por _stabilityWindow
-      if (currentSafe == _lastKnownSafe) {
-        _stateStableSince ??= now;
-      } else {
-        _stateStableSince = now;
-        _lastKnownSafe = currentSafe;
-      }
-      
-      final isStable = _stateStableSince != null && now.difference(_stateStableSince!) >= const Duration(seconds: 5);
-      _log('checkAndSendEvent: currentSafe=$currentSafe, isStable=$isStable, stableSince=${_stateStableSince?.toIso8601String()}, lastKnownSafe=$_lastKnownSafe');
-
       bool shouldSend = false;
       String? eventType;
       
@@ -175,16 +164,16 @@ class WifiMonitor {
         } else {
           _log('FIRST CHECK: establishing baseline, disconnected -> no event');
         }
-      } else if (currentSafe && !previousSafe && isStable) {
+      } else if (currentSafe && !previousSafe) {
         shouldSend = true;
         eventType = 'llegada';
-        _log('TRANSITION connected (stable) -> shouldSend=true');
-      } else if (!currentSafe && previousSafe && isStable) {
+        _log('TRANSITION connected -> shouldSend=true');
+      } else if (!currentSafe && previousSafe) {
         shouldSend = true;
         eventType = 'salida';
-        _log('TRANSITION disconnected (stable) -> shouldSend=true');
-      } else if (!background) {
-        _log('NO CHANGE or not stable. safe=$currentSafe prev=$previousSafe isStable=$isStable');
+        _log('TRANSITION disconnected -> shouldSend=true');
+      } else {
+        _log('NO CHANGE. safe=$currentSafe prev=$previousSafe');
       }
 
       // Cooldown: no enviar si pasó muy poco tiempo desde el último evento del mismo tipo
@@ -206,7 +195,7 @@ class WifiMonitor {
         _lastEventType = eventType;
         _log('Event sent successfully');
       } else if (!shouldSend && eventType != null) {
-        _log('Event suppressed (cooldown or not stable)');
+        _log('Event suppressed (cooldown)');
       } else {
         _log('No event to send');
       }
