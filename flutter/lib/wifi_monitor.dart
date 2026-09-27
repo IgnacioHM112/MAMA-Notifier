@@ -13,6 +13,7 @@ class WifiMonitor {
   final String zoneName;
   final _storage = const FlutterSecureStorage();
   StreamSubscription<List<ConnectivityResult>>? _subscription;
+  bool _isListening = false;
 
   WifiMonitor({
     required this.apiService,
@@ -34,68 +35,113 @@ class WifiMonitor {
         return false;
       }
 
-      // Limpiar comillas que algunos teléfonos agregan al SSID
       ssid = ssid.replaceAll('"', '');
       final cleanSafeSsid = safeSsid.replaceAll('"', '');
 
       return ssid.toLowerCase() == cleanSafeSsid.toLowerCase();
     } catch (e) {
-      print('⚠️ Error al leer el estado Wi-Fi: $e');
+      print('⚠️ WifiMonitor.isConnectedToSafeWifi ERROR: $e');
       return false;
     }
   }
 
   Future<void> startForegroundMonitoring() async {
-    _subscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> status) async {
-      await checkAndSendEvent();
-    });
+    if (_isListening) return;
+    
+    try {
+      _subscription = Connectivity().onConnectivityChanged.listen(
+        (List<ConnectivityResult> status) async {
+          try {
+            await checkAndSendEvent();
+          } catch (e, stack) {
+            print('WifiMonitor onConnectivityChanged ERROR: $e\n$stack');
+          }
+        },
+        onError: (err) {
+          print('WifiMonitor connectivity stream error: $err');
+          _isListening = false;
+        },
+        onDone: () {
+          print('WifiMonitor connectivity stream closed');
+          _isListening = false;
+        },
+      );
+      _isListening = true;
+      print('WifiMonitor started');
+    } catch (e, stack) {
+      print('WifiMonitor.startForegroundMonitoring ERROR: $e\n$stack');
+      _isListening = false;
+    }
   }
 
   Future<void> stopForegroundMonitoring() async {
-    await _subscription?.cancel();
-    _subscription = null;
+    try {
+      await _subscription?.cancel();
+      _subscription = null;
+      _isListening = false;
+      print('WifiMonitor stopped');
+    } catch (e) {
+      print('WifiMonitor stop error: $e');
+    }
   }
 
   Future<void> checkAndSendEvent({bool background = false, bool force = false, bool? connected}) async {
-    final currentSafe = connected ?? await isConnectedToSafeWifi();
-    final previousSafe = await _getLastSafeState();
+    try {
+      final currentSafe = connected ?? await isConnectedToSafeWifi();
+      final previousSafe = await _getLastSafeState();
 
-    bool shouldSend = false;
-    if (force) {
-      shouldSend = true;
-    } else if (currentSafe && !previousSafe) {
-      shouldSend = true;
-    } else if (!currentSafe && previousSafe) {
-      shouldSend = true;
-    } else if (!background) {
-      print('No hay cambio de estado Wi-Fi seguro. safe=$currentSafe prev=$previousSafe');
-    }
+      bool shouldSend = false;
+      if (force) {
+        shouldSend = true;
+      } else if (currentSafe && !previousSafe) {
+        shouldSend = true;
+      } else if (!currentSafe && previousSafe) {
+        shouldSend = true;
+      } else if (!background) {
+        print('No hay cambio de estado Wi-Fi seguro. safe=$currentSafe prev=$previousSafe');
+      }
 
-    if (shouldSend) {
-      await _sendEvent(currentSafe ? 'llegada' : 'salida');
+      if (shouldSend) {
+        await _sendEvent(currentSafe ? 'llegada' : 'salida');
+      }
+      
+      await _saveLastSafeState(currentSafe);
+    } catch (e, stack) {
+      print('WifiMonitor.checkAndSendEvent ERROR: $e\n$stack');
     }
-    
-    await _saveLastSafeState(currentSafe);
   }
 
   Future<bool> _getLastSafeState() async {
-    final stored = await _storage.read(key: 'last_safe_wifi_state');
-    return stored == 'true';
+    try {
+      final stored = await _storage.read(key: 'last_safe_wifi_state');
+      return stored == 'true';
+    } catch (e) {
+      print('WifiMonitor._getLastSafeState ERROR: $e');
+      return false;
+    }
   }
 
   Future<void> _saveLastSafeState(bool value) async {
-    await _storage.write(key: 'last_safe_wifi_state', value: value ? 'true' : 'false');
+    try {
+      await _storage.write(key: 'last_safe_wifi_state', value: value ? 'true' : 'false');
+    } catch (e) {
+      print('WifiMonitor._saveLastSafeState ERROR: $e');
+    }
   }
 
   Future<void> _sendEvent(String eventType) async {
-    final payload = EventPayload(
-      userId: userId,
-      deviceId: deviceId,
-      eventType: eventType,
-      zoneName: zoneName,
-      timestamp: DateTime.now(),
-    );
-    final success = await apiService.sendLocationEvent(payload);
-    print('📶 Wi-Fi monitor: evento $eventType enviado, success=$success');
+    try {
+      final payload = EventPayload(
+        userId: userId,
+        deviceId: deviceId,
+        eventType: eventType,
+        zoneName: zoneName,
+        timestamp: DateTime.now(),
+      );
+      final success = await apiService.sendLocationEvent(payload);
+      print('📶 Wi-Fi monitor: evento $eventType enviado, success=$success');
+    } catch (e, stack) {
+      print('WifiMonitor._sendEvent ERROR: $e\n$stack');
+    }
   }
 }
