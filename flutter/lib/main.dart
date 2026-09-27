@@ -324,7 +324,6 @@ class _MonitorTabState extends State<MonitorTab> {
   }
 
   Future<void> _toggleMonitoring(bool start) async {
-    // Wrap entire function in Zone to catch ALL errors including native crashes
     await Zone.current.run(() async {
       try {
         print('🔍 _toggleMonitoring START=$start');
@@ -360,7 +359,7 @@ class _MonitorTabState extends State<MonitorTab> {
             return;
           }
 
-          // 1. Iniciar Servicio Guardián (Foreground)
+          // 1. Iniciar Servicio Guardián (Foreground) - MINIMAL TEST FIRST
           print('🔄 Checking if service is running...');
           _updateStatus('🔄 Verificando servicio...');
           
@@ -372,19 +371,19 @@ class _MonitorTabState extends State<MonitorTab> {
             await FlutterForegroundTask.restartService();
             print('✅ Service restarted');
           } else {
-            _updateStatus('🔄 Iniciando nuevo servicio...');
-            print('🚀 Starting foreground service...');
+            _updateStatus('🔄 Iniciando nuevo servicio (TEST MÍNIMO)...');
+            print('🚀 Starting foreground service (MINIMAL)...');
             await FlutterForegroundTask.startService(
               notificationTitle: 'Modo Guardián Activo',
-              notificationText: 'Monitoreando red Wi-Fi: $ssid',
+              notificationText: 'Test minimal - no crash',
               callback: startCallback,
             );
-            print('✅ Service started successfully');
+            print('✅ Service started successfully (MINIMAL)');
           }
-          _updateStatus('✅ Servicio iniciado correctamente');
+          _updateStatus('✅ Servicio iniciado - TEST MÍNIMO OK');
 
-          // 2. Monitoreo en Vivo (UI)
-          _updateStatus('📡 Iniciando monitoreo Wi-Fi...');
+          // PASO 1: Agregar WifiMonitor (UI monitoring)
+          _updateStatus('📡 Iniciando WifiMonitor...');
           _liveMonitor = WifiMonitor(
             apiService: _apiService,
             safeSsid: ssid,
@@ -395,7 +394,7 @@ class _MonitorTabState extends State<MonitorTab> {
           await _liveMonitor?.startForegroundMonitoring();
           print('✅ WifiMonitor started');
 
-          // 3. Native Wi‑Fi push listener
+          // PASO 2: Agregar NativeWifiListener (push events)
           _updateStatus('📶 Iniciando listener nativo...');
           _nativeWifi = NativeWifiListener();
           _nativeWifi!.start((connected) {
@@ -404,11 +403,10 @@ class _MonitorTabState extends State<MonitorTab> {
           });
           print('✅ Native listener started');
           
-          _updateStatus('🚀 Guardián activado. Puedes cerrar la app.');
+          _updateStatus('🚀 Guardián activado con monitores completos. Puedes cerrar la app.');
         } else {
           _updateStatus('🛑 Deteniendo monitoreo...');
           await FlutterForegroundTask.stopService();
-          await _liveMonitor?.stopForegroundMonitoring();
           _liveMonitor = null;
           _nativeWifi?.stop();
           _nativeWifi = null;

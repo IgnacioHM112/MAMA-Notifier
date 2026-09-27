@@ -9,7 +9,7 @@ class MyForegroundTaskHandler extends TaskHandler {
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter taskStarter) async {
-    print('Servicio Guardián iniciado.');
+    print('✅ Foreground service STARTED (full)');
     
     final apiService = ApiService();
     final ssid = await apiService.getSafeSsid();
@@ -26,23 +26,25 @@ class MyForegroundTaskHandler extends TaskHandler {
         zoneName: zoneName,
       );
 
-      // Revisar cada 30 segundos para máxima velocidad
+      // Check every 30 seconds for background monitoring
       _timer = Timer.periodic(const Duration(seconds: 30), (timer) async {
         await _wifiMonitor?.checkAndSendEvent(background: true);
       });
       
+      // Initial check
       await _wifiMonitor?.checkAndSendEvent(background: true);
     }
   }
 
   @override
   void onRepeatEvent(DateTime timestamp) {
-    // No usado
+    // Heartbeat - just log we're alive
+    print('💓 Foreground service heartbeat');
   }
 
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     _timer?.cancel();
-    print('Servicio Guardián detenido.');
+    print('🛑 Foreground service STOPPED');
   }
 }
