@@ -58,10 +58,22 @@ class WifiMonitor {
         return false;
       }
 
-      String? ssid = await NetworkInfo().getWifiName();
-      _log('isConnectedToSafeWifi: Current SSID=$ssid');
+      // Retry up to 3 times if SSID is null but we're on WiFi
+      String? ssid;
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        ssid = await NetworkInfo().getWifiName();
+        _log('isConnectedToSafeWifi: Attempt $attempt - Current SSID=$ssid');
+        if (ssid != null) {
+          break;
+        }
+        if (attempt < 3) {
+          _log('isConnectedToSafeWifi: SSID is null, retrying in 500ms...');
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+      
       if (ssid == null) {
-        _log('isConnectedToSafeWifi: SSID is null');
+        _log('isConnectedToSafeWifi: SSID is null after retries');
         return false;
       }
 
