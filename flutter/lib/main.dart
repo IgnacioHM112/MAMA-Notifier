@@ -1,10 +1,12 @@
 import 'dart:async'; // for Zone
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'api_service.dart';
 import 'wifi_monitor.dart';
 import 'wifi_native.dart';
@@ -839,8 +841,98 @@ class _ProfileTabState extends State<ProfileTab> {
                 minimumSize: const Size(double.infinity, 50),
               ),
             ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 16),
+            const Text(
+              '🔧 Debug',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: _showForegroundLog,
+              icon: const Icon(Icons.bug_report),
+              label: const Text('Ver Log Foreground Service'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey[200],
+                foregroundColor: Colors.grey[800],
+                minimumSize: const Size(double.infinity, 50),
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _showForegroundLog() async {
+    String logContent = 'No se encontró el log';
+    try {
+      // Try external storage first
+      final externalFile = File('/storage/emulated/0/Documents/foreground_log.txt');
+      if (await externalFile.exists()) {
+        logContent = await externalFile.readAsString();
+      } else {
+        // Fallback to app private directory
+        final dir = await getApplicationDocumentsDirectory();
+        final internalFile = File('${dir.path}/foreground_log.txt');
+        if (await internalFile.exists()) {
+          logContent = await internalFile.readAsString();
+        }
+      }
+    } catch (e) {
+      logContent = 'Error leyendo log: $e';
+    }
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Foreground Service Log'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              logContent.isEmpty ? '(vacío)' : logContent,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              try {
+                final externalFile = File('/storage/emulated/0/Documents/foreground_log.txt');
+                if (await externalFile.exists()) {
+                  await externalFile.writeAsString('');
+                }
+                final dir = await getApplicationDocumentsDirectory();
+                final internalFile = File('${dir.path}/foreground_log.txt');
+                if (await internalFile.exists()) {
+                  await internalFile.writeAsString('');
+                }
+                if (mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Log limpiado')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Limpiar log'),
+          ),
+        ],
       ),
     );
   }
