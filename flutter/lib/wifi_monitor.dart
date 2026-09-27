@@ -16,6 +16,14 @@ class WifiMonitor {
   final _storage = const FlutterSecureStorage();
   StreamSubscription<List<ConnectivityResult>>? _subscription;
   bool _isListening = false;
+  
+  // Anti-duplicado / estabilidad
+  DateTime? _lastEventTime;
+  String? _lastEventType;
+  DateTime? _stateStableSince;
+  bool? _lastKnownSafe;
+  static const Duration _cooldown = Duration(seconds: 30); // Mínimo entre eventos
+  static const Duration _stabilityWindow = Duration(seconds: 5); // Estado debe ser estable 5s
 
   Future<void> _logToFile(String msg) async {
     try {
@@ -138,24 +146,58 @@ class WifiMonitor {
       final previousSafe = await _getLastSafeState();
       _log('checkAndSendEvent: previousSafe=$previousSafe');
 
+      final now = DateTime.now();
+      
+      // Ventana de estabilidad: el estado debe ser consistente por _stabilityWindow
+      if (currentSafe == _lastKnownSafe) {
+        _stateStableSince ??= now;
+      } else {
+        _stateStableSince = now;
+        _lastKnownSafe = currentSafe;
+      }
+      
+      final isStable = _stateStableSince != null && now.difference(_stateStableSince!) >= const Duration(seconds: 5);
+      _log('checkAndSendEvent: currentSafe=$currentSafe, isStable=$isStable, stableSince=${_stateStableSince?.toIso8601String()}');
+
       bool shouldSend = false;
+      String? eventType;
+      
       if (force) {
         shouldSend = true;
+        eventType = currentSafe ? 'llegada' : 'salida';
         _log('FORCE=true -> shouldSend=true');
-      } else if (currentSafe && !previousSafe) {
+      } else if (currentSafe && !previousSafe && isStable) {
         shouldSend = true;
-        _log('TRANSITION connected -> shouldSend=true');
-      } else if (!currentSafe && previousSafe) {
+        eventType = 'llegada';
+        _log('TRANSITION connected (stable) -> shouldSend=true');
+      } else if (!currentSafe && previousSafe && isStable) {
         shouldSend = true;
-        _log('TRANSITION disconnected -> shouldSend=true');
+        eventType = 'salida';
+        _log('TRANSITION disconnected (stable) -> shouldSend=true');
       } else if (!background) {
-        _log('NO CHANGE. safe=$currentSafe prev=$previousSafe');
+        _log('NO CHANGE or not stable. safe=$currentSafe prev=$previousSafe isStable=$isStable');
       }
 
-      if (shouldSend) {
-        _log('SENDING event...');
-        await _sendEventWithRetry(currentSafe ? 'llegada' : 'salida');
+      // Cooldown: no enviar si pasó muy poco tiempo desde el último evento del mismo tipo
+      if (shouldSend && eventType != null) {
+        final canSend = _lastEventTime == null || 
+                       _lastEventType != eventType ||
+                       now.difference(_lastEventTime!) >= const Duration(seconds: 30);
+        
+        if (!canSend) {
+          _log('COOLDOWN: skipping $eventType (last $_lastEventType at $_lastEventTime)');
+          shouldSend = false;
+        }
+      }
+
+      if (shouldSend && eventType != null) {
+        _log('SENDING event: $eventType');
+        await _sendEventWithRetry(eventType!);
+        _lastEventTime = DateTime.now();
+        _lastEventType = eventType;
         _log('Event sent successfully');
+      } else if (!shouldSend && eventType != null) {
+        _log('Event suppressed (cooldown or not stable)');
       } else {
         _log('No event to send');
       }
