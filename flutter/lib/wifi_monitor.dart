@@ -17,13 +17,13 @@ class WifiMonitor {
   StreamSubscription<List<ConnectivityResult>>? _subscription;
   bool _isListening = false;
   
-  // Anti-duplicado / estabilidad
+  // Anti-duplicado / estabilidad - REDUCIDO PARA TESTING
   DateTime? _lastEventTime;
   String? _lastEventType;
   DateTime? _stateStableSince;
   bool? _lastKnownSafe;
-  static const Duration _cooldown = Duration(seconds: 30); // Mínimo entre eventos
-  static const Duration _stabilityWindow = Duration(seconds: 5); // Estado debe ser estable 5s
+  static const Duration _cooldown = Duration(seconds: 5); // Mínimo entre eventos (TEST: 5s)
+  static const Duration _stabilityWindow = Duration(seconds: 1); // Estado debe ser estable 1s (TEST: 1s)
 
   Future<void> _logToFile(String msg) async {
     try {
