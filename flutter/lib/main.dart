@@ -7,6 +7,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 import 'api_service.dart';
 import 'wifi_monitor.dart';
 import 'wifi_native.dart';
@@ -486,6 +487,18 @@ class _MonitorTabState extends State<MonitorTab> {
     _updateStatus('✅ Prueba enviada (success=$success). Estado Wi-Fi: ${isSafe ? "CONECTADO" : "FUERA DE RANGO"}');
   }
 
+  Future<void> _forceBackgroundCheck() async {
+    _updateStatus('🔧 Forzando check en background...');
+    try {
+      // Try to trigger the foreground service check via the native channel
+      final channel = const MethodChannel('mama_notifier/foreground_check');
+      await channel.invokeMethod('forceCheck');
+      _updateStatus('✅ Comando enviado al servicio foreground');
+    } catch (e) {
+      _updateStatus('❌ Error: $e');
+    }
+  }
+
   void _updateStatus(String msg) => setState(() => _statusMessage = msg);
 
   @override
@@ -554,6 +567,17 @@ class _MonitorTabState extends State<MonitorTab> {
               icon: const Icon(Icons.sync),
               label: const Text('Verificar ahora (Manual)'),
               style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _forceBackgroundCheck,
+              icon: const Icon(Icons.wifi_find),
+              label: const Text('FORZAR CHECK BACKGROUND (Test)'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange[50],
+                foregroundColor: Colors.orange,
+                minimumSize: const Size(double.infinity, 50),
+              ),
             ),
             const SizedBox(height: 32),
             Container(

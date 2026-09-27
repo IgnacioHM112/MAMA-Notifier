@@ -1,6 +1,7 @@
 package com.mamanotifier.app
 
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -11,11 +12,13 @@ import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodChannel
 import android.util.Log
 
 class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "mama_notifier/wifi_events"
+    private val FORCE_CHECK_CHANNEL = "mama_notifier/foreground_check"
     private val TAG = "MamaNotifierMain"
     private var connectivityMgr: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -54,6 +57,21 @@ class MainActivity : FlutterActivity() {
             Log.d(TAG, "EventChannel configured successfully")
         } catch (e: Exception) {
             Log.e(TAG, "configureFlutterEngine ERROR", e)
+        }
+
+        // Add MethodChannel for force check
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FORCE_CHECK_CHANNEL).setMethodCallHandler { call, result ->
+            if (call.method == "forceCheck") {
+                try {
+                    forceBackgroundCheck()
+                    result.success(true)
+                } catch (e: Exception) {
+                    Log.e(TAG, "forceCheck ERROR", e)
+                    result.error("ERROR", "forceCheck failed", e.message)
+                }
+            } else {
+                result.notImplemented()
+            }
         }
     }
 
@@ -128,5 +146,17 @@ class MainActivity : FlutterActivity() {
             Log.e(TAG, "onDestroy ERROR", e)
         }
         super.onDestroy()
+    }
+
+    private fun forceBackgroundCheck() {
+        // Send a broadcast to the foreground service to trigger a check
+        val intent = Intent(this, com.pravera.flutter_foreground_task.service.ForegroundService::class.java)
+        intent.action = "FORCE_CHECK"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+        Log.d(TAG, "Force check triggered via broadcast")
     }
 }
