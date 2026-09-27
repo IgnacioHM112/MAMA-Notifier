@@ -20,6 +20,7 @@ class MainActivity : FlutterActivity() {
     private var connectivityMgr: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var eventSink: EventChannel.EventSink? = null
+    private var isListening = false
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -31,6 +32,7 @@ class MainActivity : FlutterActivity() {
                         try {
                             eventSink = events
                             registerNetworkCallback()
+                            isListening = true
                             Log.d(TAG, "EventChannel onListen - registered NetworkCallback")
                         } catch (e: Exception) {
                             Log.e(TAG, "onListen ERROR", e)
@@ -41,6 +43,7 @@ class MainActivity : FlutterActivity() {
                         try {
                             unregisterNetworkCallback()
                             eventSink = null
+                            isListening = false
                             Log.d(TAG, "EventChannel onCancel - unregistered NetworkCallback")
                         } catch (e: Exception) {
                             Log.e(TAG, "onCancel ERROR", e)
@@ -76,6 +79,15 @@ class MainActivity : FlutterActivity() {
                         Log.d(TAG, "NetworkCallback onLost - disconnected")
                     } catch (e: Exception) {
                         Log.e(TAG, "onLost ERROR", e)
+                    }
+                }
+                override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                    try {
+                        val hasWifi = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                        sendEvent(if (hasWifi) "connected" else "disconnected")
+                        Log.d(TAG, "NetworkCallback onCapabilitiesChanged - hasWifi=$hasWifi")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "onCapabilitiesChanged ERROR", e)
                     }
                 }
             }

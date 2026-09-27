@@ -176,33 +176,43 @@ class ApiService {
   }
 
   Future<bool> sendLocationEvent(EventPayload event) async {
-    try {
-      final token = await getStoredToken();
-      if (token == null) {
-        print('❌ No hay token. Debes hacer login primero.');
-        return false;
+    const maxRetries = 3;
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      try {
+        final token = await getStoredToken();
+        if (token == null) {
+          print('❌ No hay token. Debes hacer login primero.');
+          return false;
+        }
+
+        print('ApiService.sendLocationEvent: Attempt $attempt/3');
+        final response = await http.post(
+          Uri.parse('$baseUrl/events'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode(event.toJson()),
+        ).timeout(const Duration(seconds: 15));
+
+        if (response.statusCode == 200 || response.statusCode == 202) {
+          print('✅ Evento enviado con éxito: ${response.body}');
+          return true;
+        }
+
+        print('❌ Error en el servidor (attempt $attempt/3): ${response.statusCode} - ${response.body}');
+      } catch (e) {
+        print('❌ Error de conexión al enviar evento (attempt $attempt/3): $e');
       }
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/events'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode(event.toJson()),
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 202) {
-        print('✅ Evento enviado con éxito: ${response.body}');
-        return true;
+      if (attempt < 3) {
+        int delayMs = 2000 * attempt; // 2s, 4s, 6s
+        print('ApiService: Retrying in ${delayMs}ms... (attempt ${attempt + 1}/3)');
+        await Future.delayed(Duration(milliseconds: delayMs * 1000));
       }
-
-      print('❌ Error en el servidor: ${response.statusCode} - ${response.body}');
-      return false;
-    } catch (e) {
-      print('❌ Error de conexión al enviar evento: $e');
-      return false;
     }
+    print('ApiService.sendLocationEvent: FAILED after 3 attempts');
+    return false;
   }
 
   Future<void> logout() async {

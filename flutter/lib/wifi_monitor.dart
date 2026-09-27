@@ -58,22 +58,22 @@ class WifiMonitor {
         return false;
       }
 
-      // Retry up to 3 times if SSID is null but we're on WiFi
+      // Retry up to 10 times with 1 second delay if SSID is null but we're on WiFi
       String? ssid;
-      for (int attempt = 1; attempt <= 3; attempt++) {
+      for (int attempt = 1; attempt <= 10; attempt++) {
         ssid = await NetworkInfo().getWifiName();
-        _log('isConnectedToSafeWifi: Attempt $attempt - Current SSID=$ssid');
-        if (ssid != null) {
+        _log('isConnectedToSafeWifi: Attempt $attempt/10 - Current SSID=$ssid');
+        if (ssid != null && ssid.isNotEmpty) {
           break;
         }
-        if (attempt < 3) {
-          _log('isConnectedToSafeWifi: SSID is null, retrying in 500ms...');
-          await Future.delayed(const Duration(milliseconds: 500));
+        if (attempt < 10) {
+          _log('isConnectedToSafeWifi: SSID is null/empty, retrying in 1s... (attempt ${attempt + 1}/10)');
+          await Future.delayed(const Duration(seconds: 1));
         }
       }
       
-      if (ssid == null) {
-        _log('isConnectedToSafeWifi: SSID is null after retries');
+      if (ssid == null || ssid.isEmpty) {
+        _log('isConnectedToSafeWifi: SSID is null/empty after 10 retries');
         return false;
       }
 
@@ -154,7 +154,7 @@ class WifiMonitor {
 
       if (shouldSend) {
         _log('SENDING event...');
-        await _sendEvent(currentSafe ? 'llegada' : 'salida');
+        await _sendEventWithRetry(currentSafe ? 'llegada' : 'salida');
         _log('Event sent successfully');
       } else {
         _log('No event to send');
@@ -185,24 +185,37 @@ class WifiMonitor {
     }
   }
 
-  Future<void> _sendEvent(String eventType) async {
-    try {
-      _log('_sendEvent: START eventType=$eventType');
-      final payload = EventPayload(
-        userId: userId,
-        deviceId: deviceId,
-        eventType: eventType,
-        zoneName: zoneName,
-        timestamp: DateTime.now(),
-      );
-      _log('Calling apiService.sendLocationEvent...');
-      final success = await apiService.sendLocationEvent(payload);
-      _log('apiService returned success=$success');
-      if (!success) {
-        _log('WARNING - API returned false');
+  Future<void> _sendEventWithRetry(String eventType) async {
+    int maxRetries = 3;
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      try {
+        _log('_sendEvent: START eventType=$eventType (attempt $attempt/3)');
+        final payload = EventPayload(
+          userId: userId,
+          deviceId: deviceId,
+          eventType: eventType,
+          zoneName: zoneName,
+          timestamp: DateTime.now(),
+        );
+        _log('Calling apiService.sendLocationEvent...');
+        final success = await apiService.sendLocationEvent(payload);
+        _log('apiService returned success=$success');
+        if (success) {
+          _log('_sendEvent: SUCCESS on attempt $attempt');
+          return;
+        } else {
+          _log('WARNING - API returned false (attempt $attempt/3)');
+        }
+      } catch (e, stack) {
+        _log('_sendEvent ERROR (attempt $attempt/3): $e\n$stack');
       }
-    } catch (e, stack) {
-      _log('_sendEvent ERROR: $e\n$stack');
+      
+      if (attempt < 3) {
+        int delayMs = 1000 * attempt; // 1s, 2s, 3s
+        _log('Retrying in ${delayMs}ms... (attempt ${attempt + 1}/3)');
+        await Future.delayed(Duration(milliseconds: delayMs));
+      }
     }
+    _log('_sendEvent: FAILED after 3 attempts');
   }
 }
