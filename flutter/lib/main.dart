@@ -1,12 +1,14 @@
+import 'dart:async'; // for Zone
 import 'package:flutter/material.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'api_service.dart';
 import 'wifi_monitor.dart';
 import 'wifi_native.dart';
 import 'foreground_service.dart';
-import 'event_model.dart'; // Importante: Asegurar que este import esté presente
+import 'event_model.dart';
 
 const String wifiTaskName = 'wifiMonitorTask';
 
@@ -322,54 +324,105 @@ class _MonitorTabState extends State<MonitorTab> {
   }
 
   Future<void> _toggleMonitoring(bool start) async {
-    final ssid = _ssidController.text.trim();
-    final zone = _zoneController.text.trim().isEmpty ? 'Casa' : _zoneController.text.trim();
+    // Wrap entire function in Zone to catch ALL errors including native crashes
+    await Zone.current.run(() async {
+      try {
+        print('🔍 _toggleMonitoring START=$start');
+        _updateStatus('🔍 Iniciando proceso...');
+        
+        final ssid = _ssidController.text.trim();
+        final zone = _zoneController.text.trim().isEmpty ? 'Casa' : _zoneController.text.trim();
 
-    if (start) {
-      if (ssid.isEmpty) {
-        _updateStatus('⚠️ Por favor, ingresa el nombre de tu Wi-Fi.');
-        return;
+        if (start) {
+          if (ssid.isEmpty) {
+            _updateStatus('⚠️ Por favor, ingresa el nombre de tu Wi-Fi.');
+            return;
+          }
+          _updateStatus('💾 Guardando configuración...');
+          await _apiService.saveSafeSsid(ssid);
+          await _apiService.saveZoneName(zone);
+
+          // Request location permission (required for Wi‑Fi scanning on Android 12+)
+          _updateStatus('📍 Solicitando permiso de ubicación...');
+          final locPerm = await Permission.locationWhenInUse.request();
+          print('📍 Location permission: $locPerm');
+          if (!locPerm.isGranted) {
+            _updateStatus('❌ Permiso de ubicación denegado. Actívalo en Ajustes.');
+            return;
+          }
+
+          // Request notification permission for Android 13+
+          _updateStatus('🔔 Solicitando permiso de notificaciones...');
+          final notifPerm = await Permission.notification.request();
+          print('🔔 Notification permission: $notifPerm');
+          if (!notifPerm.isGranted) {
+            _updateStatus('❌ Permiso de notificaciones denegado. Actívalo en Ajustes.');
+            return;
+          }
+
+          // 1. Iniciar Servicio Guardián (Foreground)
+          print('🔄 Checking if service is running...');
+          _updateStatus('🔄 Verificando servicio...');
+          
+          final isRunning = await FlutterForegroundTask.isRunningService;
+          print('🔄 Service running: $isRunning');
+          
+          if (isRunning) {
+            _updateStatus('🔄 Reiniciando servicio...');
+            await FlutterForegroundTask.restartService();
+            print('✅ Service restarted');
+          } else {
+            _updateStatus('🔄 Iniciando nuevo servicio...');
+            print('🚀 Starting foreground service...');
+            await FlutterForegroundTask.startService(
+              notificationTitle: 'Modo Guardián Activo',
+              notificationText: 'Monitoreando red Wi-Fi: $ssid',
+              callback: startCallback,
+            );
+            print('✅ Service started successfully');
+          }
+          _updateStatus('✅ Servicio iniciado correctamente');
+
+          // 2. Monitoreo en Vivo (UI)
+          _updateStatus('📡 Iniciando monitoreo Wi-Fi...');
+          _liveMonitor = WifiMonitor(
+            apiService: _apiService,
+            safeSsid: ssid,
+            userId: _userId!,
+            deviceId: _deviceId!,
+            zoneName: zone,
+          );
+          await _liveMonitor?.startForegroundMonitoring();
+          print('✅ WifiMonitor started');
+
+          // 3. Native Wi‑Fi push listener
+          _updateStatus('📶 Iniciando listener nativo...');
+          _nativeWifi = NativeWifiListener();
+          _nativeWifi!.start((connected) {
+            print('📶 Native WiFi event: $connected');
+            _liveMonitor?.checkAndSendEvent(connected: connected);
+          });
+          print('✅ Native listener started');
+          
+          _updateStatus('🚀 Guardián activado. Puedes cerrar la app.');
+        } else {
+          _updateStatus('🛑 Deteniendo monitoreo...');
+          await FlutterForegroundTask.stopService();
+          await _liveMonitor?.stopForegroundMonitoring();
+          _liveMonitor = null;
+          _nativeWifi?.stop();
+          _nativeWifi = null;
+          _updateStatus('🛑 Monitoreo desactivado.');
+        }
+        setState(() => _monitoringEnabled = start);
+        print('✅ _toggleMonitoring completed successfully');
+      } catch (e, stackTrace) {
+        print('❌ ERROR in _toggleMonitoring: $e');
+        print('Stack trace: $stackTrace');
+        _updateStatus('❌ ERROR: $e');
+        setState(() => _monitoringEnabled = false);
       }
-      await _apiService.saveSafeSsid(ssid);
-      await _apiService.saveZoneName(zone);
-
-      // 1. Iniciar Servicio Guardián (Foreground)
-      if (await FlutterForegroundTask.isRunningService) {
-        await FlutterForegroundTask.restartService();
-      } else {
-        await FlutterForegroundTask.startService(
-          notificationTitle: 'Modo Guardián Activo',
-          notificationText: 'Monitoreando red Wi-Fi: $ssid',
-          callback: startCallback,
-        );
-      }
-
-      // 2. Monitoreo en Vivo (UI)
-      _liveMonitor = WifiMonitor(
-        apiService: _apiService,
-        safeSsid: ssid,
-        userId: _userId!,
-        deviceId: _deviceId!,
-        zoneName: zone,
-      );
-      await _liveMonitor?.startForegroundMonitoring();
-
-      // 3. Native Wi‑Fi push listener
-      _nativeWifi = NativeWifiListener();
-      _nativeWifi!.start((connected) {
-        _liveMonitor?.checkAndSendEvent(connected: connected);
-      });
-      
-      _updateStatus('🚀 Guardián activado. Puedes cerrar la app.');
-    } else {
-      await FlutterForegroundTask.stopService();
-      await _liveMonitor?.stopForegroundMonitoring();
-      _liveMonitor = null;
-      _nativeWifi?.stop();
-      _nativeWifi = null;
-      _updateStatus('🛑 Monitoreo desactivado.');
-    }
-    setState(() => _monitoringEnabled = start);
+    });
   }
 
   Future<void> _checkNow() async {
